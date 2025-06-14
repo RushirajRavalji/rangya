@@ -1,0 +1,14 @@
+# Allow all crawlers
+User-agent: *
+Allow: /
+
+# Disallow admin pages
+Disallow: /admin/
+Disallow: /account/
+Disallow: /checkout
+Disallow: /cart
+Disallow: /order-confirmation
+Disallow: /api/
+
+# Sitemap location
+Sitemap: https://ranga-denim.com/api/sitemap 

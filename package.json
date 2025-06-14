@@ -1,0 +1,43 @@
+{
+  "name": "ranga-ecommerce",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "setup": "node scripts/setup.js",
+    "seed-products": "node scripts/seed-products.js",
+    "add-admin": "node scripts/add-admin.js",
+    "remove-products": "node scripts/remove-products.js",
+    "remove-hindi": "node scripts/remove-hindi-fields.js",
+    "add-test-products": "node -e \"require('./scripts/add-test-products.js')\"",
+    "add-test-products-direct": "node scripts/add-test-products-direct.js",
+    "remove-demo-products": "node scripts/remove-demo-products.js",
+    "check-firebase": "node check-firebase-config.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.5.0",
+    "firebase": "^10.14.1",
+    "framer-motion": "^12.16.0",
+    "js-cookie": "^3.0.5",
+    "lru-cache": "^10.2.0",
+    "next": "^14.1.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-icons": "^5.0.1",
+    "react-to-print": "^3.1.0",
+    "sharp": "^0.33.2"
+  },
+  "devDependencies": {
+    "autoprefixer": "^10.4.17",
+    "eslint": "^8.56.0",
+    "eslint-config-next": "^14.1.0",
+    "postcss": "^8.4.35",
+    "tailwindcss": "^3.4.1"
+  },
+  "engines": {
+    "node": "18.x"
+  }
+}

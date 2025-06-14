@@ -1,0 +1,56 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() && request.auth.token.admin == true;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function isValidImage() {
+      return request.resource.contentType.matches('image/.*') && 
+             request.resource.size < 5 * 1024 * 1024; // 5MB limit
+    }
+    
+    // Allow public read access to product and banner images
+    match /products/{imageId} {
+      allow read: if true;
+      allow write: if isAdmin() && isValidImage();
+    }
+    
+    match /banners/{imageId} {
+      allow read: if true;
+      allow write: if isAdmin() && isValidImage();
+    }
+    
+    // Allow users to upload their own profile images
+    match /users/{userId}/{imageId} {
+      allow read: if true;
+      allow write: if isOwner(userId) && isValidImage();
+      allow delete: if isOwner(userId) || isAdmin();
+    }
+    
+    // Order attachments (receipts, etc.)
+    match /orders/{orderId}/{imageId} {
+      allow read: if isAuthenticated() && 
+                   (request.auth.uid == resource.metadata.userId || isAdmin());
+      allow write: if isAuthenticated() && 
+                    request.auth.uid == request.resource.metadata.userId && 
+                    isValidImage();
+      allow delete: if isAdmin();
+    }
+    
+    // Deny by default
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+} 
