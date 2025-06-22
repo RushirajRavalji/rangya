@@ -1,4 +1,5 @@
 import Header from './Header';
+import Link from 'next/link';
 import { FiInstagram, FiFacebook, FiYoutube, FiTwitter, FiMail } from 'react-icons/fi';
 
 const Layout = ({ children }) => {
@@ -10,7 +11,7 @@ const Layout = ({ children }) => {
         <div className="container mx-auto px-4">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
             <div>
-              <h3 className="font-bold text-lg mb-4">About Ranga</h3>
+              <h3 className="font-bold text-lg mb-4">About Rangya</h3>
               <p className="text-gray-600">
                 Premium denim clothing for men. Style me apna rang - express your unique style with our quality denim products.
               </p>
@@ -18,21 +19,21 @@ const Layout = ({ children }) => {
             <div>
               <h3 className="font-bold text-lg mb-4">Shop</h3>
               <ul className="space-y-2">
-                <li><a href="/category/shirts" className="text-gray-600 hover:text-indigo-deep">Denim Shirts</a></li>
-                <li><a href="/category/tshirts" className="text-gray-600 hover:text-indigo-deep">Denim T-Shirts</a></li>
-                <li><a href="/category/pants" className="text-gray-600 hover:text-indigo-deep">Denim Pants</a></li>
-                <li><a href="/collections" className="text-gray-600 hover:text-indigo-deep">Collections</a></li>
-                <li><a href="/bundles" className="text-gray-600 hover:text-indigo-deep">Bundle Offers</a></li>
+                <li><Link href="/products?category=shirts" className="text-gray-600 hover:text-indigo-deep">Denim Shirts</Link></li>
+                <li><Link href="/products?category=tshirts" className="text-gray-600 hover:text-indigo-deep">Denim T-Shirts</Link></li>
+                <li><Link href="/products?category=pants" className="text-gray-600 hover:text-indigo-deep">Denim Pants</Link></li>
+                <li><Link href="/products" className="text-gray-600 hover:text-indigo-deep">All Products</Link></li>
+                <li><Link href="/sale" className="text-gray-600 hover:text-indigo-deep">Sale Items</Link></li>
               </ul>
             </div>
             <div>
               <h3 className="font-bold text-lg mb-4">Help</h3>
               <ul className="space-y-2">
-                <li><a href="/faq" className="text-gray-600 hover:text-indigo-deep">FAQ</a></li>
-                <li><a href="/shipping" className="text-gray-600 hover:text-indigo-deep">Shipping</a></li>
-                <li><a href="/returns" className="text-gray-600 hover:text-indigo-deep">Returns</a></li>
-                <li><a href="/size-guide" className="text-gray-600 hover:text-indigo-deep">Size Guide</a></li>
-                <li><a href="/contact" className="text-gray-600 hover:text-indigo-deep">Contact Us</a></li>
+                <li><Link href="/about" className="text-gray-600 hover:text-indigo-deep">About Us</Link></li>
+                <li><Link href="/contact" className="text-gray-600 hover:text-indigo-deep">Contact Us</Link></li>
+                <li><Link href="/security-policy" className="text-gray-600 hover:text-indigo-deep">Security Policy</Link></li>
+                <li><Link href="/products" className="text-gray-600 hover:text-indigo-deep">Products</Link></li>
+                <li><Link href="/login" className="text-gray-600 hover:text-indigo-deep">Account</Link></li>
               </ul>
             </div>
             <div>

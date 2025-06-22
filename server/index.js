@@ -40,7 +40,7 @@ app.use(express.urlencoded({ extended: true }));
 
 // Routes
 app.get('/', (req, res) => {
-  res.send('Ranga E-commerce API is running');
+  res.send('Rangya E-commerce API is running');
 });
 
 // Get all products

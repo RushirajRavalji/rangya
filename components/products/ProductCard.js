@@ -5,12 +5,14 @@ import OptimizedImage from '../common/OptimizedImage';
 import { useCart } from '../../contexts/CartContext';
 import { useRouter } from 'next/router';
 import { useNotification } from '../../contexts/NotificationContext';
+import { formatPrice } from '../../utils/helpers';
 
 export default function ProductCard({ product, view = 'grid' }) {
   const [isHovered, setIsHovered] = useState(false);
   const { addToCart } = useCart();
   const router = useRouter();
   const { showNotification } = useNotification();
+  const [imageLoaded, setImageLoaded] = useState(false);
   
   // Handle missing product data gracefully
   if (!product) {
@@ -42,27 +44,45 @@ export default function ProductCard({ product, view = 'grid' }) {
     ? Math.round((1 - safeProduct.salePrice / safeProduct.price) * 100)
     : 0;
   
-  // Quick add to cart
-  const handleQuickAdd = (e) => {
+  // Handle adding to cart with default size
+  const handleAddToCart = (e) => {
     e.preventDefault();
+    e.stopPropagation();
     
-    if (!isInStock()) {
-      showNotification('This product is out of stock', 'warning');
+    // Get the first available size or 'one-size'
+    const defaultSize = product.sizes 
+      ? Object.keys(product.sizes).find(size => product.sizes[size] > 0) || 'one-size'
+      : product.stock
+        ? Object.keys(product.stock).find(size => product.stock[size] > 0) || 'one-size'
+        : 'one-size';
+    
+    // Check if the product is in stock
+    const isInStock = product.sizes 
+      ? product.sizes[defaultSize] > 0
+      : product.stock
+        ? product.stock[defaultSize] > 0
+        : true;
+    
+    if (!isInStock) {
+      showNotification('This product is out of stock', 'error');
       return;
     }
     
-    // Default to first available size if no sizes are available
-    const availableSizes = Object.keys(safeProduct.stock || {}).filter(size => safeProduct.stock[size] > 0);
-    const defaultSize = availableSizes.length > 0 ? availableSizes[0] : '32';
+    addToCart({
+      id: product.id,
+      name: product.name,
+      price: product.salePrice || product.price,
+      image: product.images && product.images[0],
+      size: defaultSize,
+      quantity: 1
+    });
     
-    // Add to cart with default size and quantity of 1
-    const result = addToCart(safeProduct, defaultSize, 1);
-    
-    if (result.success) {
-      showNotification(`${safeProduct.name_en} added to cart`, 'success');
-    } else {
-      showNotification(result.error || 'Failed to add product to cart', 'error');
-    }
+    showNotification(`Added ${product.name} to cart`, 'success');
+  };
+  
+  // Handle image load success
+  const handleImageLoad = () => {
+    setImageLoaded(true);
   };
 
   if (view === 'list') {
@@ -126,7 +146,7 @@ export default function ProductCard({ product, view = 'grid' }) {
             
             <div className="flex space-x-2">
               <button
-                onClick={handleQuickAdd}
+                onClick={handleAddToCart}
                 disabled={!isInStock()}
                 className={`px-4 py-2 rounded ${
                   isInStock() 
@@ -174,7 +194,9 @@ export default function ProductCard({ product, view = 'grid' }) {
             alt={safeProduct.name_en}
             width={300}
             height={300}
-            className="w-full h-full object-contain transition-transform duration-500 group-hover:scale-105"
+            className={`w-full h-full object-contain transition-opacity duration-300 ${imageLoaded ? 'opacity-100' : 'opacity-0'}`}
+            onLoad={handleImageLoad}
+            priority={false}
           />
           
           {/* Hover Actions */}
@@ -184,7 +206,7 @@ export default function ProductCard({ product, view = 'grid' }) {
             }`}
           >
             <button
-              onClick={handleQuickAdd}
+              onClick={handleAddToCart}
               disabled={!isInStock()}
               className={`p-2 rounded-full ${
                 isInStock() 

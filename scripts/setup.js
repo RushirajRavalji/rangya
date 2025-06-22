@@ -14,7 +14,7 @@ const envPath = path.resolve(__dirname, '../.env.local');
 const envExists = fs.existsSync(envPath);
 
 console.log('=======================================');
-console.log('Ranga E-commerce Firebase Setup Script');
+console.log('Rangya E-commerce Firebase Setup Script');
 console.log('=======================================\n');
 
 if (envExists) {

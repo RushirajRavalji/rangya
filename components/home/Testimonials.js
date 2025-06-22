@@ -7,7 +7,7 @@ const testimonials = [
     role: 'Fashion Enthusiast',
     image: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?ixlib=rb-4.0.3&auto=format&fit=crop&w=200&h=200',
     rating: 5,
-    text: "The quality of Ranga denim is exceptional. I've been wearing their jeans for over a year now, and they've aged beautifully. The fit is perfect, and the attention to detail is impressive."
+    text: "The quality of Rangya denim is exceptional. I've been wearing their jeans for over a year now, and they've aged beautifully. The fit is perfect, and the attention to detail is impressive."
   },
   {
     id: 2,
@@ -15,7 +15,7 @@ const testimonials = [
     role: 'Style Blogger',
     image: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?ixlib=rb-4.0.3&auto=format&fit=crop&w=200&h=200',
     rating: 5,
-    text: "As someone who reviews fashion brands professionally, I can say that Ranga stands out for their commitment to quality. Their denim shirts have become a staple in my wardrobe."
+    text: "As someone who reviews fashion brands professionally, I can say that Rangya stands out for their commitment to quality. Their denim shirts have become a staple in my wardrobe."
   },
   {
     id: 3,
@@ -23,7 +23,7 @@ const testimonials = [
     role: 'College Student',
     image: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?ixlib=rb-4.0.3&auto=format&fit=crop&w=200&h=200',
     rating: 4,
-    text: "Affordable yet stylish - that's what I love about Ranga. As a student on a budget, I appreciate that I can get premium quality denim without breaking the bank."
+    text: "Affordable yet stylish - that's what I love about Rangya. As a student on a budget, I appreciate that I can get premium quality denim without breaking the bank."
   }
 ];
 

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import { FiTrash2, FiShoppingBag, FiArrowRight, FiMinus, FiPlus } from 'react-icons/fi';
+import { FiTrash2, FiShoppingBag, FiArrowRight, FiMinus, FiPlus, FiX, FiAlertCircle, FiCheck } from 'react-icons/fi';
 import { useCart } from '../contexts/CartContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useNotification } from '../contexts/NotificationContext';
@@ -11,10 +11,23 @@ import { isBase64Image } from '../utils/imageUtils';
 export default function CartPage() {
   const router = useRouter();
   const { currentUser } = useAuth();
-  const { cartItems, updateQuantity, removeItem, subtotal, total, discountAmount, applyPromoCode } = useCart();
+  const { 
+    cartItems, 
+    updateQuantity, 
+    removeItem, 
+    applyPromoCode, 
+    subtotal, 
+    total, 
+    discountAmount, 
+    loading: cartLoading,
+    validateStock 
+  } = useCart();
   const { showNotification } = useNotification();
   const [promoCode, setPromoCode] = useState('');
   const [localCartItems, setLocalCartItems] = useState([]);
+  const [isClient, setIsClient] = useState(false);
+  const [validatingStock, setValidatingStock] = useState(false);
+  const [stockErrors, setStockErrors] = useState([]);
   const [loading, setLoading] = useState(true);
 
   // Check if cart is empty
@@ -52,15 +65,51 @@ export default function CartPage() {
     };
   }, [currentUser]);
 
+  // Set client-side flag
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
+
+  // Handle quantity updates
   const handleQuantityChange = (productId, size, newQuantity) => {
-    if (newQuantity >= 1) {
-      updateQuantity(productId, size, newQuantity);
-    }
+    if (newQuantity < 1) return;
+    updateQuantity(productId, size, newQuantity);
   };
 
-  const handleRemoveItem = (productId, size, name) => {
+  // Remove item from cart
+  const handleRemoveItem = (productId, size) => {
     removeItem(productId, size);
-    showNotification(`${name} removed from cart`, 'info');
+    showNotification('Item removed from cart', 'info');
+  };
+
+  // Proceed to checkout
+  const handleCheckout = async () => {
+    // Validate stock before proceeding
+    try {
+      setValidatingStock(true);
+      setStockErrors([]);
+      
+      const stockValidation = await validateStock();
+      
+      if (!stockValidation.valid) {
+        setStockErrors(stockValidation.outOfStockItems);
+        showNotification('Some items in your cart are out of stock or unavailable', 'error');
+        return;
+      }
+      
+      // If logged in, proceed to checkout
+      if (currentUser) {
+        router.push('/checkout');
+      } else {
+        // If not logged in, redirect to login with return URL
+        router.push(`/login?redirect=${encodeURIComponent('/checkout')}`);
+      }
+    } catch (error) {
+      console.error('Error validating stock:', error);
+      showNotification('Error checking stock availability', 'error');
+    } finally {
+      setValidatingStock(false);
+    }
   };
 
   const handleApplyPromoCode = async () => {
@@ -80,27 +129,83 @@ export default function CartPage() {
 
   const finalTotal = total;
 
+  // Empty cart message
+  if (isClient && !loading && cartItems.length === 0) {
+    return (
+      <>
+        <Head>
+          <title>Shopping Cart | Ranga</title>
+          <meta name="description" content="View your shopping cart and proceed to checkout" />
+        </Head>
+        
+        <div className="container mx-auto px-4 py-8 min-h-screen">
+          <h1 className="text-2xl font-bold mb-8">Shopping Cart</h1>
+          
+          <div className="text-center py-16">
+            <div className="w-20 h-20 mx-auto mb-6 flex items-center justify-center rounded-full bg-gray-100">
+              <FiShoppingBag className="text-3xl text-gray-400" />
+            </div>
+            <h2 className="text-xl font-semibold mb-2">Your cart is empty</h2>
+            <p className="text-gray-600 mb-6">Looks like you haven't added any products to your cart yet.</p>
+            <Link href="/products" className="bg-indigo-deep text-white px-6 py-3 rounded-md hover:bg-blue-800 transition-colors">
+              Start Shopping
+            </Link>
+          </div>
+        </div>
+      </>
+    );
+  }
+  
+  // Loading state during initial mount or user authentication
+  if (loading || !isClient) {
+    return (
+      <div className="container mx-auto px-4 py-8 min-h-screen">
+        <h1 className="text-2xl font-bold mb-8">Shopping Cart</h1>
+        <div className="animate-pulse">
+          <div className="bg-gray-200 h-24 rounded-md mb-4"></div>
+          <div className="bg-gray-200 h-24 rounded-md mb-4"></div>
+          <div className="bg-gray-200 h-24 rounded-md"></div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="container mx-auto px-4 py-8 min-h-screen">
+    <>
       <Head>
         <title>Shopping Cart | Ranga</title>
         <meta name="description" content="View your shopping cart and proceed to checkout" />
       </Head>
 
-      <h1 className="text-2xl font-bold mb-8">Shopping Cart</h1>
+      <div className="container mx-auto px-4 py-8 min-h-screen">
+        <h1 className="text-2xl font-bold mb-8">Shopping Cart</h1>
 
-      {isCartEmpty ? (
-        <div className="text-center py-16">
-          <div className="w-20 h-20 mx-auto mb-6 flex items-center justify-center rounded-full bg-gray-100">
-            <FiShoppingBag className="text-3xl text-gray-400" />
+        {stockErrors.length > 0 && (
+          <div className="mb-6 bg-yellow-50 border-l-4 border-yellow-400 p-4">
+            <div className="flex">
+              <div className="flex-shrink-0">
+                <FiAlertCircle className="h-5 w-5 text-yellow-400" />
+              </div>
+              <div className="ml-3">
+                <h3 className="text-sm font-medium text-yellow-800">
+                  Availability issues
+                </h3>
+                <div className="mt-2 text-sm text-yellow-700">
+                  <ul className="list-disc pl-5 space-y-1">
+                    {stockErrors.map((item, index) => (
+                      <li key={index}>
+                        <strong>{item.name}</strong> (Size: {item.size}) - {item.reason}
+                        {item.reason === 'Insufficient stock' && item.available > 0 && 
+                          ` (Only ${item.available} available)`}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            </div>
           </div>
-          <h2 className="text-xl font-semibold mb-2">Your cart is empty</h2>
-          <p className="text-gray-600 mb-6">Looks like you haven't added any products to your cart yet.</p>
-          <Link href="/products" className="bg-indigo-deep text-white px-6 py-3 rounded-md hover:bg-blue-800 transition-colors">
-            Start Shopping
-          </Link>
-        </div>
-      ) : (
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Cart Items */}
           <div className="lg:col-span-2">
@@ -153,11 +258,11 @@ export default function CartPage() {
                           </button>
                         </div>
                         <button 
-                          onClick={() => handleRemoveItem(item.id, item.size, item.name)}
+                          onClick={() => handleRemoveItem(item.id, item.size)}
                           className="ml-4 text-red-500 hover:text-red-700"
                           aria-label="Remove item"
                         >
-                          <FiTrash2 size={18} />
+                          <FiX size={18} />
                         </button>
                       </div>
                     </div>
@@ -212,17 +317,27 @@ export default function CartPage() {
                 </div>
                 
                 <button
-                  onClick={() => router.push('/checkout')}
+                  onClick={handleCheckout}
+                  disabled={validatingStock || localCartItems.length === 0}
                   className="w-full bg-indigo-deep text-white px-6 py-3 rounded-md hover:bg-blue-800 transition-colors flex items-center justify-center"
                 >
-                  Proceed to Checkout
-                  <FiArrowRight className="ml-2" />
+                  {validatingStock ? (
+                    <>
+                      <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Checking stock...
+                    </>
+                  ) : (
+                    <>Proceed to Checkout</>
+                  )}
                 </button>
               </div>
             </div>
           </div>
         </div>
-      )}
-    </div>
+      </div>
+    </>
   );
 } 

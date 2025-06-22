@@ -4,6 +4,7 @@
 import { auth, app, db } from '../../utils/firebase';
 import { GoogleAuthProvider } from 'firebase/auth';
 import { collection, getDocs, limit, query } from 'firebase/firestore';
+import { testFirestoreConnection } from '../../utils/firebase';
 
 export default async function handler(req, res) {
   // Only allow GET requests
@@ -12,6 +13,8 @@ export default async function handler(req, res) {
   }
   
   try {
+    console.log("API: check-firebase endpoint called");
+    
     // Check Firebase initialization
     const firebaseStatus = {
       auth: {
@@ -58,34 +61,18 @@ export default async function handler(req, res) {
     // Check Firestore connection
     if (db) {
       try {
-        // Try to fetch products as a test
-        const productsQuery = query(collection(db, 'products'), limit(5));
-        const productsSnapshot = await getDocs(productsQuery);
+        // Test Firestore connection
+        const firestoreStatus = await testFirestoreConnection();
         
-        const productIds = [];
-        let firstProduct = null;
-        
-        productsSnapshot.forEach(doc => {
-          const data = doc.data();
-          productIds.push(doc.id);
-          
-          if (!firstProduct) {
-            firstProduct = {
-              id: doc.id,
-              name: data.name || 'No name',
-              category: data.category || 'No category',
-              hasImages: !!(data.images && data.images.length)
-            };
-          }
-        });
+        console.log("API: Firestore connection test result:", firestoreStatus);
         
         firebaseStatus.firestore = {
           connected: true,
           error: null,
           products: {
-            count: productsSnapshot.size,
-            sampleIds: productIds,
-            firstProduct
+            count: firestoreStatus.count,
+            sampleIds: firestoreStatus.sampleIds,
+            firstProduct: firestoreStatus.firstProduct
           }
         };
       } catch (error) {
@@ -114,10 +101,10 @@ export default async function handler(req, res) {
       }
     });
   } catch (error) {
-    console.error('Error in check-firebase API:', error);
+    console.error('API: Error checking Firebase connection:', error);
     
-    return res.status(500).json({
-      error: 'Failed to check Firebase configuration',
+    return res.status(500).json({ 
+      status: 'error',
       message: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
     });
   }

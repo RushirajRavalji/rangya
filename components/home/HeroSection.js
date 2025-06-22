@@ -35,14 +35,6 @@ const HeroSection = () => {
   const [isTransitioning, setIsTransitioning] = useState(false);
   const intervalRef = useRef(null);
   
-  // Log image paths for debugging
-  useEffect(() => {
-    console.log("Carousel images:");
-    slides.forEach((slide, index) => {
-      console.log(`Slide ${index + 1} image: ${slide.image}`);
-    });
-  }, []);
-
   const startAutoPlay = () => {
     intervalRef.current = setInterval(() => {
       goToNextSlide();
@@ -93,6 +85,13 @@ const HeroSection = () => {
     return () => stopAutoPlay();
   }, [isPlaying]);
 
+  // Set initial random slide on mount
+  useEffect(() => {
+    // Choose a random slide on initial load
+    const randomIndex = Math.floor(Math.random() * slides.length);
+    setCurrentSlide(randomIndex);
+  }, []);
+
   return (
     <div className="relative h-[500px] md:h-[600px] overflow-hidden">
       {/* Slides */}
@@ -130,7 +129,7 @@ const HeroSection = () => {
               {slide.description}
             </p>
             <Link 
-              href="/category/all" 
+              href="/products" 
               className="bg-white text-indigo-deep hover:bg-gray-100 px-8 py-3 rounded-md font-medium text-lg transition-colors duration-200"
             >
               Shop Now

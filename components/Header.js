@@ -9,7 +9,7 @@ import MobileMenu from './MobileMenu';
 export default function Header() {
   const [isOpen, setIsOpen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
-  const { currentUser, userRole, logOut } = useAuth();
+  const { currentUser, userRole, logout } = useAuth();
   const { cartItems, itemCount } = useCart();
   const router = useRouter();
 
@@ -26,7 +26,7 @@ export default function Header() {
   // Handle logout
   const handleLogout = async () => {
     try {
-      await logOut();
+      await logout();
       router.push('/');
     } catch (error) {
       console.error('Logout error:', error);
@@ -38,8 +38,8 @@ export default function Header() {
       <div className="container mx-auto px-4 flex justify-between items-center">
         {/* Logo */}
         <Link href="/" className="flex items-center">
-          <img src="/logo.png" alt="Ranga" className="h-8 w-auto" />
-          <span className="ml-2 text-xl font-bold text-indigo-deep">Ranga</span>
+          <img src="/images/logo/logo.png" alt="Rangya" className="h-8 w-auto" />
+          <span className="ml-2 text-xl font-bold text-indigo-deep">Rangya</span>
         </Link>
 
         {/* Desktop Navigation */}

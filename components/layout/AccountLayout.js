@@ -5,12 +5,12 @@ import { useAuth } from '../../contexts/AuthContext';
 import { FiUser, FiPackage, FiHeart, FiLogOut, FiShield } from 'react-icons/fi';
 
 export default function AccountLayout({ children, title }) {
-  const { currentUser, logOut, userRole } = useAuth();
+  const { currentUser, logout, userRole } = useAuth();
   const router = useRouter();
 
   const handleLogout = async () => {
     try {
-      await logOut();
+      await logout();
       router.push('/');
     } catch (error) {
       console.error('Failed to log out', error);

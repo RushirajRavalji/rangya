@@ -1,107 +1,87 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
 import Link from 'next/link';
-import { useAuth } from '../../contexts/AuthContext';
-import AdminNotifications from '../admin/AdminNotifications';
 import { 
+  FiMenu, 
+  FiX, 
   FiHome, 
   FiPackage, 
-  FiUsers, 
   FiShoppingBag, 
-  FiLogOut, 
-  FiMenu, 
-  FiX,
-  FiChevronDown,
-  FiChevronUp
+  FiUsers, 
+  FiSettings, 
+  FiLogOut,
+  FiGrid,
+  FiLayers
 } from 'react-icons/fi';
+import { useAuth } from '../../contexts/AuthContext';
+import { useNotification } from '../../contexts/NotificationContext';
 
 export default function AdminLayout({ children, title }) {
-  const { currentUser, userRole, logout } = useAuth();
-  const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [productsDropdownOpen, setProductsDropdownOpen] = useState(false);
-  const [ordersDropdownOpen, setOrdersDropdownOpen] = useState(false);
+  const { currentUser, logout } = useAuth();
+  const { showNotification } = useNotification();
+  const router = useRouter();
 
-  // Check if user is admin
-  useEffect(() => {
-    if (!currentUser) {
-      router.push('/login?redirect=/admin');
-      return;
-    }
+  // Check if section is active
+  const isSectionActive = (path) => {
+    return router.pathname.startsWith(path);
+  };
 
-    if (userRole !== 'admin') {
-      router.push('/account');
-    }
-  }, [currentUser, userRole, router]);
-
+  // Handle logout
   const handleLogout = async () => {
     try {
       await logout();
-      router.push('/');
+      router.push('/login');
+      showNotification('You have been logged out successfully', 'success');
     } catch (error) {
-      console.error('Failed to log out', error);
+      console.error('Logout error:', error);
+      showNotification('Failed to log out. Please try again.', 'error');
     }
   };
 
-  // Determine active link based on current path
-  const isActive = (path) => {
-    return router.pathname === path;
-  };
-
-  // Determine if a section is active based on path prefix
-  const isSectionActive = (prefix) => {
-    return router.pathname.startsWith(prefix);
-  };
-
-  if (!currentUser || userRole !== 'admin') {
-    return null;
-  }
-
   return (
-    <div className="min-h-screen bg-gray-100 flex">
-      {/* Mobile Sidebar Toggle */}
-      <div className="lg:hidden fixed top-0 left-0 right-0 z-50 bg-white shadow-sm p-4 flex justify-between items-center">
-        <div className="flex items-center">
-          <button 
-            onClick={() => setSidebarOpen(!sidebarOpen)} 
-            className="text-gray-600 focus:outline-none"
-          >
-            {sidebarOpen ? <FiX size={24} /> : <FiMenu size={24} />}
-          </button>
-          <h1 className="ml-4 text-lg font-semibold text-indigo-deep">Ranga Admin</h1>
-        </div>
-        <div className="flex items-center">
-          <AdminNotifications />
-          <div className="text-sm text-gray-600 ml-4">
-            {currentUser.email}
-          </div>
-        </div>
-      </div>
+    <div className="min-h-screen bg-gray-100">
+      <Head>
+        <title>{title ? `${title} | Admin` : 'Admin Dashboard'} | Rangya</title>
+      </Head>
+
+      {/* Mobile Sidebar Overlay */}
+      {sidebarOpen && (
+        <div 
+          className="fixed inset-0 z-40 bg-black bg-opacity-50 lg:hidden"
+          onClick={() => setSidebarOpen(false)}
+        ></div>
+      )}
 
       {/* Sidebar */}
-      <div className={`
-        fixed top-0 bottom-0 left-0 z-40 w-64 bg-indigo-deep text-white transform h-screen overflow-y-auto
-        ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} 
-        lg:translate-x-0 transition-transform duration-300 ease-in-out
-      `}
-      style={{ position: 'sticky', height: '100vh' }}>
+      <div 
+        className={`fixed inset-y-0 left-0 z-50 w-64 bg-indigo-900 text-white transform transition-transform duration-300 ease-in-out lg:translate-x-0 ${
+          sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}
+      >
         <div className="flex flex-col h-full">
           {/* Sidebar Header */}
-          <div className="p-4 border-b border-indigo-800">
-            <div className="flex items-center justify-center">
-              <h1 className="text-xl font-bold text-white">Ranga Admin</h1>
-            </div>
+          <div className="flex items-center justify-between px-4 h-16 bg-indigo-950">
+            <Link href="/admin" className="text-xl font-bold text-white">
+              Rangya Admin
+            </Link>
+            <button 
+              className="lg:hidden text-white"
+              onClick={() => setSidebarOpen(false)}
+            >
+              <FiX size={24} />
+            </button>
           </div>
 
           {/* Sidebar Navigation */}
-          <nav className="flex-1 overflow-y-auto p-4">
+          <nav className="flex-1 px-2 py-4 overflow-y-auto">
             <ul className="space-y-2">
               <li>
                 <Link 
                   href="/admin" 
                   className={`flex items-center p-2 rounded-md ${
-                    isActive('/admin') 
+                    router.pathname === '/admin' 
                       ? 'bg-white text-indigo-deep' 
                       : 'text-white hover:bg-indigo-800'
                   }`}
@@ -111,97 +91,82 @@ export default function AdminLayout({ children, title }) {
                   Dashboard
                 </Link>
               </li>
-
-              {/* Products Section */}
+              
               <li>
-                <div className="mb-2">
-                  <button
-                    onClick={() => setProductsDropdownOpen(!productsDropdownOpen)}
-                    className={`flex items-center justify-between w-full p-2 rounded-md ${
-                      isSectionActive('/admin/products') 
-                        ? 'bg-indigo-800 text-white' 
-                        : 'text-white hover:bg-indigo-800'
-                    }`}
-                  >
-                    <div className="flex items-center">
-                      <FiShoppingBag className="mr-3" />
-                      Products
-                    </div>
-                    {productsDropdownOpen ? <FiChevronUp /> : <FiChevronDown />}
-                  </button>
-                  
-                  {productsDropdownOpen && (
-                    <ul className="pl-10 mt-1 space-y-1">
-                      <li>
-                        <Link 
-                          href="/admin/products" 
-                          className={`block p-2 rounded-md ${
-                            isActive('/admin/products') 
-                              ? 'bg-white text-indigo-deep' 
-                              : 'text-white hover:bg-indigo-800'
-                          }`}
-                          onClick={() => setSidebarOpen(false)}
-                        >
-                          All Products
-                        </Link>
-                      </li>
-                      <li>
-                        <Link 
-                          href="/admin/products/new" 
-                          className={`block p-2 rounded-md ${
-                            isActive('/admin/products/new') 
-                              ? 'bg-white text-indigo-deep' 
-                              : 'text-white hover:bg-indigo-800'
-                          }`}
-                          onClick={() => setSidebarOpen(false)}
-                        >
-                          Add Product
-                        </Link>
-                      </li>
-                    </ul>
-                  )}
-                </div>
+                <Link 
+                  href="/admin/products" 
+                  className={`flex items-center p-2 rounded-md ${
+                    isSectionActive('/admin/products') 
+                      ? 'bg-white text-indigo-deep' 
+                      : 'text-white hover:bg-indigo-800'
+                  }`}
+                  onClick={() => setSidebarOpen(false)}
+                >
+                  <FiPackage className="mr-3" />
+                  Products
+                </Link>
               </li>
-
-              {/* Orders Section */}
+              
               <li>
-                <div className="mb-2">
-                  <button
-                    onClick={() => setOrdersDropdownOpen(!ordersDropdownOpen)}
-                    className={`flex items-center justify-between w-full p-2 rounded-md ${
-                      isSectionActive('/admin/orders') 
-                        ? 'bg-indigo-800 text-white' 
-                        : 'text-white hover:bg-indigo-800'
-                    }`}
-                  >
-                    <div className="flex items-center">
-                      <FiPackage className="mr-3" />
-                      Orders
-                    </div>
-                    {ordersDropdownOpen ? <FiChevronUp /> : <FiChevronDown />}
-                  </button>
-                  
-                  {ordersDropdownOpen && (
-                    <ul className="pl-10 mt-1 space-y-1">
-                      <li>
-                        <Link 
-                          href="/admin/orders" 
-                          className={`block p-2 rounded-md ${
-                            isActive('/admin/orders') 
-                              ? 'bg-white text-indigo-deep' 
-                              : 'text-white hover:bg-indigo-800'
-                          }`}
-                          onClick={() => setSidebarOpen(false)}
-                        >
-                          All Orders
-                        </Link>
-                      </li>
-                    </ul>
-                  )}
-                </div>
+                <Link 
+                  href="/admin/orders" 
+                  className={`flex items-center p-2 rounded-md ${
+                    isSectionActive('/admin/orders') 
+                      ? 'bg-white text-indigo-deep' 
+                      : 'text-white hover:bg-indigo-800'
+                  }`}
+                  onClick={() => setSidebarOpen(false)}
+                >
+                  <FiShoppingBag className="mr-3" />
+                  Orders
+                </Link>
               </li>
-
-              {/* Users */}
+              
+              <li>
+                <Link 
+                  href="/admin/bundles" 
+                  className={`flex items-center p-2 rounded-md ${
+                    isSectionActive('/admin/bundles') 
+                      ? 'bg-white text-indigo-deep' 
+                      : 'text-white hover:bg-indigo-800'
+                  }`}
+                  onClick={() => setSidebarOpen(false)}
+                >
+                  <FiLayers className="mr-3" />
+                  Bundles
+                </Link>
+              </li>
+              
+              <li>
+                <Link 
+                  href="/admin/categories" 
+                  className={`flex items-center p-2 rounded-md ${
+                    isSectionActive('/admin/categories') 
+                      ? 'bg-white text-indigo-deep' 
+                      : 'text-white hover:bg-indigo-800'
+                  }`}
+                  onClick={() => setSidebarOpen(false)}
+                >
+                  <FiGrid className="mr-3" />
+                  Categories
+                </Link>
+              </li>
+              
+              <li>
+                <Link 
+                  href="/admin/settings" 
+                  className={`flex items-center p-2 rounded-md ${
+                    isSectionActive('/admin/settings') 
+                      ? 'bg-white text-indigo-deep' 
+                      : 'text-white hover:bg-indigo-800'
+                  }`}
+                  onClick={() => setSidebarOpen(false)}
+                >
+                  <FiSettings className="mr-3" />
+                  Settings
+                </Link>
+              </li>
+              
               <li>
                 <Link 
                   href="/admin/users" 
@@ -223,7 +188,7 @@ export default function AdminLayout({ children, title }) {
           <div className="p-4 border-t border-indigo-800 mt-auto">
             <div className="flex flex-col">
               <div className="text-sm text-indigo-200 mb-2">
-                Logged in as: {currentUser.email}
+                Logged in as: {currentUser?.email || 'Admin'}
               </div>
               <div className="flex space-x-2">
                 <Link 
@@ -246,21 +211,22 @@ export default function AdminLayout({ children, title }) {
       </div>
 
       {/* Main Content */}
-      <div className="flex-1">
-        {/* Desktop Header */}
-        <div className="hidden lg:flex justify-between items-center bg-white p-4 shadow-sm">
-          <h1 className="text-xl font-bold text-gray-800">{title}</h1>
-          <div className="flex items-center">
-            <AdminNotifications />
-            <div className="ml-4 text-sm text-gray-600">
-              Logged in as: <span className="font-medium">{currentUser.email}</span>
-            </div>
-          </div>
-        </div>
-        
-        <div className="p-4 pt-16 lg:pt-4">
+      <div className="lg:pl-64">
+        {/* Top Bar */}
+        <header className="sticky top-0 z-30 bg-white shadow-sm h-16 flex items-center px-4">
+          <button 
+            className="lg:hidden text-gray-600 hover:text-gray-900"
+            onClick={() => setSidebarOpen(true)}
+          >
+            <FiMenu size={24} />
+          </button>
+          <h1 className="ml-4 lg:ml-0 text-xl font-semibold text-gray-800">{title || 'Admin Dashboard'}</h1>
+        </header>
+
+        {/* Content */}
+        <main className="p-6">
           {children}
-        </div>
+        </main>
       </div>
     </div>
   );

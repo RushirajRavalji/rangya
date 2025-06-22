@@ -186,8 +186,8 @@ export default function ResetPassword() {
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
         <Link href="/">
           <img 
-            src="/logo.png" 
-            alt="Ranga" 
+            src="/images/logo/logo.png" 
+            alt="Rangya" 
             className="mx-auto h-12 w-auto"
           />
         </Link>

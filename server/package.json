@@ -1,7 +1,7 @@
 {
-  "name": "ranga-ecommerce-server",
+  "name": "rangya-ecommerce-server",
   "version": "1.0.0",
-  "description": "Express microservice for Ranga e-commerce",
+  "description": "Express microservice for Rangya e-commerce",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",

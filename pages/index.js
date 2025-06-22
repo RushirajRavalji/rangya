@@ -6,7 +6,7 @@ import Image from 'next/image';
 import { useCart } from '../contexts/CartContext';
 import { useNotification } from '../contexts/NotificationContext';
 import { getProducts } from '../utils/productService';
-import { FiTag, FiArrowRight, FiLoader, FiAlertCircle } from 'react-icons/fi';
+import { FiTag, FiArrowRight, FiLoader } from 'react-icons/fi';
 import { useRouter } from 'next/router';
 import ProductCard from '../components/products/ProductCard';
 import FeaturedCategories from '../components/home/FeaturedCategories';
@@ -21,7 +21,6 @@ export default function Home({ initialProducts }) {
   const { addToCart } = useCart();
   const { showNotification } = useNotification();
   const router = useRouter();
-  const [error, setError] = useState(null);
   const [retryCount, setRetryCount] = useState(0);
 
   useEffect(() => {
@@ -29,7 +28,6 @@ export default function Home({ initialProducts }) {
     const fetchProducts = async () => {
       try {
         setIsLoading(true);
-        setError(null);
         
         console.log(`Fetching products from API... (attempt ${retryCount + 1})`);
         
@@ -66,15 +64,12 @@ export default function Home({ initialProducts }) {
             setProducts(data.products);
           } else {
             console.warn("API returned empty products array");
-            setError('No products found. Please try again later.');
           }
         } else {
           console.warn("Invalid data format returned from API");
-          setError('Error loading products. Invalid data format.');
         }
       } catch (error) {
         console.error('Error loading products:', error);
-        setError('Failed to load products. Please try again later.');
       } finally {
         setIsLoading(false);
       }
@@ -140,7 +135,10 @@ export default function Home({ initialProducts }) {
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-pulse flex flex-col items-center">
           <FiLoader className="animate-spin text-indigo-deep h-12 w-12 mb-4" />
-          <p>Loading products...</p>
+          <p className="text-gray-700 font-medium">Loading products...</p>
+          <p className="text-gray-500 text-sm mt-2 max-w-md text-center">
+            Please wait while we load our collection...
+          </p>
         </div>
       </div>
     );
@@ -149,20 +147,20 @@ export default function Home({ initialProducts }) {
   return (
     <div>
       <SEO 
-        title="Ranga – Style Me Apna Rang"
+        title="Rangya – Style Me Apna Rang"
         description="Premium denim clothing for men. Discover our exclusive collection of high-quality jeans, shirts, and accessories designed for style and comfort."
-        canonical="https://ranga-denim.com"
+        canonical="https://rangya.com"
         openGraph={{
-          title: "Ranga – Style Me Apna Rang | Premium Denim Clothing",
+          title: "Rangya – Style Me Apna Rang | Premium Denim Clothing",
           description: "Premium denim clothing for men. Discover our exclusive collection of high-quality jeans, shirts, and accessories designed for style and comfort.",
-          url: "https://ranga-denim.com",
+          url: "https://rangya.com",
           type: "website",
           images: [
             {
-              url: "https://ranga-denim.com/images/og-image.jpg",
+              url: "/images/logo/logo.png",
               width: 1200,
               height: 630,
-              alt: "Ranga – Premium Denim Clothing"
+              alt: "Rangya – Premium Denim Clothing"
             }
           ]
         }}
@@ -172,21 +170,6 @@ export default function Home({ initialProducts }) {
       <HeroSection />
 
       <main className="container mx-auto px-4 py-12">
-        {error && (
-          <div className="mb-8 bg-red-50 border border-red-200 rounded-lg p-4 flex items-center justify-between">
-            <div className="flex items-center">
-              <FiAlertCircle className="text-red-500 mr-2" />
-              <p className="text-red-700">{error}</p>
-            </div>
-            <button 
-              onClick={handleRetry}
-              className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700"
-            >
-              Retry
-            </button>
-          </div>
-        )}
-        
         {/* Sale Banner */}
         <div className="mb-12 bg-gradient-to-r from-red-500 to-orange-500 rounded-lg overflow-hidden shadow-lg">
           <div className="p-6 md:p-8 flex flex-col md:flex-row items-center justify-between">
@@ -199,8 +182,11 @@ export default function Home({ initialProducts }) {
                 Discover our exclusive collection with discounts of 50% or more! Limited time offer.
               </p>
             </div>
-            <Link href="/sale" className="bg-white text-red-500 px-6 py-3 rounded-full font-semibold flex items-center hover:bg-gray-100 transition-colors">
-              Shop Now <FiArrowRight className="ml-2" />
+            <Link 
+              href="/products?category=sale" 
+              className="inline-flex items-center bg-white px-6 py-3 rounded-full font-medium text-red-600 hover:bg-gray-100 transition duration-200"
+            >
+              Shop Sale <FiArrowRight className="ml-2" />
             </Link>
           </div>
         </div>
@@ -209,57 +195,69 @@ export default function Home({ initialProducts }) {
         <FeaturedCategories />
         
         {/* Featured Products */}
-        <section className="py-12">
-          <div className="text-center mb-10">
-            <h2 className="text-3xl font-bold text-gray-900">Featured Products</h2>
-            <p className="mt-2 text-gray-600">Discover our most popular items</p>
+        <section className="mb-16">
+          <div className="flex justify-between items-center mb-8">
+            <h2 className="text-2xl font-bold text-gray-900">Featured Products</h2>
+            <Link 
+              href="/products" 
+              className="text-indigo-deep hover:text-indigo-deep-dark flex items-center"
+            >
+              View All <FiArrowRight className="ml-1" />
+            </Link>
           </div>
-          
-          <div className="flex flex-wrap justify-center gap-4 mb-8">
-            <button 
-              className={`px-6 py-2 rounded-full ${activeCategory === 'all' ? 'bg-indigo-deep text-white' : 'bg-gray-100 text-gray-800 hover:bg-gray-200'}`}
+
+          {/* Category Filters */}
+          <div className="flex flex-wrap gap-2 mb-6">
+            <button
+              className={`px-4 py-2 rounded-full text-sm font-medium ${
+                activeCategory === 'all' 
+                  ? 'bg-indigo-deep text-white' 
+                  : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
+              }`}
               onClick={() => setActiveCategory('all')}
             >
-              All Products
+              All
             </button>
-            {Object.keys(categoryMapping).map(category => (
-              <button 
+            {['Shirts', 'T-shirts', 'Jeans'].map((category) => (
+              <button
                 key={category}
-                className={`px-6 py-2 rounded-full ${activeCategory === category ? 'bg-indigo-deep text-white' : 'bg-gray-100 text-gray-800 hover:bg-gray-200'}`}
-                onClick={() => setActiveCategory(category)}
+                className={`px-4 py-2 rounded-full text-sm font-medium ${
+                  activeCategory === category.toLowerCase() 
+                    ? 'bg-indigo-deep text-white' 
+                    : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
+                }`}
+                onClick={() => setActiveCategory(category.toLowerCase())}
               >
-                {categoryMapping[category]}
+                {category}
               </button>
             ))}
           </div>
-          
+
           {filteredProducts.length > 0 ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-              {filteredProducts.slice(0, 15).map(product => (
-                <ProductCard 
-                  key={product.id} 
+              {filteredProducts.slice(0, 8).map((product) => (
+                <ProductCard
+                  key={product.id}
                   product={product}
                   onAddToCart={(e) => handleAddToCart(e, product)}
                 />
               ))}
             </div>
           ) : (
-            <div className="text-center py-12 bg-gray-50 rounded-lg border border-gray-200">
-              <p className="text-gray-500">No products found in this category.</p>
-              <button 
-                onClick={handleRetry}
-                className="mt-4 px-4 py-2 bg-indigo-deep text-white rounded hover:bg-blue-800"
-              >
-                Refresh Products
-              </button>
+            <div className="py-12 text-center">
+              <div className="bg-gray-50 p-8 rounded-lg inline-block">
+                <p className="text-gray-600 mb-4">We're adding new products to this category soon.</p>
+                {activeCategory !== 'all' && (
+                  <button
+                    onClick={() => setActiveCategory('all')}
+                    className="text-indigo-deep hover:text-indigo-deep-dark font-medium"
+                  >
+                    View all products
+                  </button>
+                )}
+              </div>
             </div>
           )}
-          
-          <div className="mt-8 text-center">
-            <Link href="/products" className="inline-flex items-center text-indigo-deep hover:text-blue-800 font-medium">
-              View All Products <FiArrowRight className="ml-2" />
-            </Link>
-          </div>
         </section>
         
         {/* Testimonials */}

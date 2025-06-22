@@ -2,6 +2,7 @@ import { useRouter } from 'next/router';
 import { FiX, FiTrash2, FiShoppingBag } from 'react-icons/fi';
 import { useCart } from '../../contexts/CartContext';
 import OptimizedImage from '../common/OptimizedImage';
+import { isBase64Image } from '../../utils/imageUtils';
 
 const CartDrawer = ({ isOpen, onClose }) => {
   const router = useRouter();
@@ -86,18 +87,16 @@ const CartDrawer = ({ isOpen, onClose }) => {
               {cartItems.map((item, index) => (
                 <li key={`${item.id}-${item.size}`} className="py-6">
                   <div className="flex items-center">
-                    <div className="h-16 w-16 flex-shrink-0 bg-gray-100 rounded-md overflow-hidden mr-4">
+                    <div className="w-16 h-16 bg-gray-100 rounded-md overflow-hidden mr-4">
                       {item.image ? (
-                        <OptimizedImage
-                          src={item.image}
-                          alt={item.name}
-                          width={64}
-                          height={64}
-                          className="h-full w-full object-cover"
+                        <img 
+                          src={isBase64Image(item.image) ? item.image : `/images/products/${item.image}`} 
+                          alt={item.name} 
+                          className="w-full h-full object-cover"
                         />
                       ) : (
-                        <div className="h-full w-full flex items-center justify-center text-xs text-gray-500">
-                          No image
+                        <div className="w-full h-full flex items-center justify-center bg-gray-200">
+                          <span className="text-gray-500 text-sm">No image</span>
                         </div>
                       )}
                     </div>

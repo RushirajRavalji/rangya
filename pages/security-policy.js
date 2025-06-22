@@ -5,9 +5,9 @@ export default function SecurityPolicy() {
   return (
     <div className="bg-gray-50 min-h-screen">
       <SEO 
-        title="Security Policy | Ranga"
+        title="Security Policy | Rangya"
         description="Our security policy and responsible vulnerability disclosure program"
-        canonical="https://ranga-denim.com/security-policy"
+        canonical="https://rangya.com/security-policy"
       />
 
       <div className="container mx-auto px-4 py-12">
@@ -17,7 +17,7 @@ export default function SecurityPolicy() {
           <div className="bg-white rounded-lg shadow-sm p-8 mb-8">
             <h2 className="text-2xl font-semibold mb-6">Responsible Disclosure</h2>
             <p className="mb-6 text-gray-700">
-              At Ranga, we take the security of our systems seriously. Despite our best efforts, vulnerabilities may still exist.
+              At Rangya, we take the security of our systems seriously. Despite our best efforts, vulnerabilities may still exist.
               If you discover a vulnerability, we would like to know about it so we can take steps to address it. We encourage
               responsible disclosure of vulnerabilities following these guidelines:
             </p>

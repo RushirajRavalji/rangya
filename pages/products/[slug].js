@@ -1,9 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
-import Head from 'next/head';
 import Link from 'next/link';
 import { FiShoppingBag, FiHeart, FiShare2, FiChevronLeft, FiChevronRight, FiShoppingCart, FiLoader, FiAlertCircle, FiArrowLeft, FiCheck } from 'react-icons/fi';
-import SEO, { generateProductStructuredData, generateBreadcrumbStructuredData } from '../../components/common/SEO';
+import SEO from '../../components/common/SEO';
 import OptimizedImage from '../../components/common/OptimizedImage';
 import { useCart } from '../../contexts/CartContext';
 import { db } from '../../utils/firebase';
@@ -12,6 +11,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { getProductBySlug, getRelatedProducts, toggleWishlistItem, isInWishlist } from '../../utils/productService';
 import ProductCard from '../../components/products/ProductCard';
 import { useNotification } from '../../contexts/NotificationContext';
+import analytics from '../../utils/analytics';
 
 export default function ProductDetail() {
   const router = useRouter();
@@ -78,6 +78,17 @@ export default function ProductDetail() {
     fetchProduct();
   }, [slug, currentUser]);
 
+  // Track product view with analytics
+  useEffect(() => {
+    if (product && !loading) {
+      try {
+        analytics.ecommerce.viewProduct(product);
+      } catch (error) {
+        console.error('Error tracking product view:', error);
+      }
+    }
+  }, [product, loading]);
+
   // Handle size selection
   const handleSizeSelect = (size) => {
     setSelectedSize(size);
@@ -132,8 +143,8 @@ export default function ProductDetail() {
         throw new Error(result.error || 'Failed to add item to cart');
       }
       
-      // Show success message
-      showNotification(`${product.name_en || "Product"} added to cart`, 'success');
+      // The notification is already shown in the addToCart function in CartContext
+      // so we don't need to show it again here
       setAddedToCart(true);
       setTimeout(() => {
         setAddedToCart(false);
@@ -210,32 +221,21 @@ export default function ProductDetail() {
   return (
     <>
       <SEO 
-        title={`${product.name_en} | Ranga`}
-        description={product.description_en ? 
-          (product.description_en.length > 160 ? 
-            product.description_en.substring(0, 157) + '...' : 
-            product.description_en) : 
-          `Buy ${product.name_en} from Ranga - Premium denim clothing for men`}
-        canonical={`https://ranga-denim.com/products/${product.slug}`}
-        openGraph={{
-          title: `${product.name_en} | Ranga`,
-          description: product.description_en ? 
-            (product.description_en.length > 160 ? 
-              product.description_en.substring(0, 157) + '...' : 
-              product.description_en) : 
-            `Buy ${product.name_en} from Ranga - Premium denim clothing for men`,
-          url: `https://ranga-denim.com/products/${product.slug}`,
-          type: 'product',
-          images: product.images && product.images.length > 0 ? [
-            {
-              url: product.images[0],
-              width: 800,
-              height: 800,
-              alt: product.name_en
-            }
-          ] : []
+        title={`${product.name_en || product.name} | Rangya`}
+        description={product.description_en || product.description || `Buy ${product.name_en || product.name} - Premium quality denim clothing from Rangya.`}
+        canonical={`/products/${product.slug}`}
+        image={product.images && product.images.length > 0 ? product.images[0] : '/images/logo/logo.png'}
+        type="product"
+        product={{
+          name: product.name_en || product.name,
+          description: product.description_en || product.description,
+          images: product.images,
+          id: product.id,
+          price: product.price,
+          salePrice: product.salePrice,
+          inStock: isInStock()
         }}
-        structuredData={structuredData}
+        keywords={[product.name_en || product.name, product.category, 'denim', 'clothing', 'fashion', 'Rangya']}
       />
       
       <div className="container mx-auto px-4 py-8">
@@ -528,4 +528,47 @@ export async function getStaticProps({ params }) {
       revalidate: 60 // Try again sooner if there was an error
     };
   }
-} 
+}
+
+// Generate structured data for products
+const generateProductStructuredData = (product) => {
+  const baseUrl = 'https://ranga-denim.com';
+  
+  return {
+    "@context": "https://schema.org/",
+    "@type": "Product",
+    "name": product.name_en || product.name,
+    "image": product.images && product.images.length > 0 ? product.images.map(img => img.startsWith('http') ? img : `${baseUrl}/images/products/${img}`) : [],
+    "description": product.description_en || product.description,
+    "sku": product.sku || product.id,
+    "mpn": product.id,
+    "brand": {
+      "@type": "Brand",
+      "name": "Rangya"
+    },
+    "offers": {
+      "@type": "Offer",
+      "url": `${baseUrl}/products/${product.slug}`,
+      "priceCurrency": "INR",
+      "price": product.salePrice || product.price,
+      "priceValidUntil": new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString(),
+      "availability": product.stock && Object.values(product.stock).some(qty => qty > 0) ? 
+        "https://schema.org/InStock" : 
+        "https://schema.org/OutOfStock"
+    }
+  };
+};
+
+// Generate structured data for breadcrumbs
+const generateBreadcrumbStructuredData = (items) => {
+  return {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    "itemListElement": items.map((item, index) => ({
+      "@type": "ListItem",
+      "position": index + 1,
+      "name": item.name,
+      "item": item.url
+    }))
+  };
+}; 

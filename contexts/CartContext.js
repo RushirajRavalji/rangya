@@ -1,7 +1,8 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { useAuth } from './AuthContext';
 import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../utils/firebase';
+import { useNotification } from './NotificationContext';
 
 const CartContext = createContext();
 
@@ -15,6 +16,9 @@ export function CartProvider({ children }) {
   const [discount, setDiscount] = useState(0);
   const [promoCode, setPromoCode] = useState('');
   const { currentUser } = useAuth();
+  const isSyncingRef = useRef(false);
+  const pendingUpdatesRef = useRef(null);
+  const { showNotification } = useNotification();
 
   // Debug cart state changes
   useEffect(() => {
@@ -26,6 +30,7 @@ export function CartProvider({ children }) {
     const loadCart = async () => {
       try {
         setLoading(true);
+        isSyncingRef.current = true;
         
         // If user is logged in, try to get cart from Firestore first
         if (currentUser) {
@@ -59,6 +64,19 @@ export function CartProvider({ children }) {
         loadFromLocalStorage(currentUser ? currentUser.uid : 'anonymous');
       } finally {
         setLoading(false);
+        isSyncingRef.current = false;
+        
+        // Process any pending updates that came in during sync
+        if (pendingUpdatesRef.current) {
+          const { items, discount, promoCode } = pendingUpdatesRef.current;
+          setCartItems(items);
+          setDiscount(discount);
+          setPromoCode(promoCode);
+          pendingUpdatesRef.current = null;
+          
+          // Save these pending updates
+          saveCartToFirestore(items, discount, promoCode);
+        }
       }
     };
 
@@ -85,32 +103,85 @@ export function CartProvider({ children }) {
     loadCart();
   }, [currentUser]);
 
-  // Save cart to Firestore when it changes (if user is logged in)
-  useEffect(() => {
-    const saveCart = async () => {
-      if (!currentUser || loading) return;
+  // Save cart to Firestore and localStorage
+  const saveCartToFirestore = async (items, discountValue, promoCodeValue) => {
+    if (!currentUser) {
+      // For anonymous users, just save to localStorage
+      localStorage.setItem('cart', JSON.stringify(items));
+      localStorage.setItem('cart_discount', discountValue);
+      localStorage.setItem('cart_promoCode', promoCodeValue);
       
-      try {
-        const userCartRef = doc(db, 'userCarts', currentUser.uid);
-        await setDoc(userCartRef, {
-          items: cartItems,
-          discount,
-          promoCode,
-          updatedAt: serverTimestamp(),
-          userId: currentUser.uid
-        }, { merge: true });
+      // Dispatch custom event for cart updates within the same tab
+      window.dispatchEvent(new CustomEvent('cartUpdated', { 
+        detail: { items, discount: discountValue, promoCode: promoCodeValue } 
+      }));
+      return;
+    }
+    
+    // If already syncing, store this update to apply after current sync completes
+    if (isSyncingRef.current) {
+      pendingUpdatesRef.current = { 
+        items, 
+        discount: discountValue, 
+        promoCode: promoCodeValue 
+      };
+      return;
+    }
+    
+    try {
+      isSyncingRef.current = true;
+      
+      // Save to Firestore
+      const userCartRef = doc(db, 'userCarts', currentUser.uid);
+      await setDoc(userCartRef, {
+        items,
+        discount: discountValue,
+        promoCode: promoCodeValue,
+        updatedAt: serverTimestamp(),
+        userId: currentUser.uid
+      }, { merge: true });
+      
+      // Also update localStorage with user-specific key
+      const userSpecificKey = `cart_${currentUser.uid}`;
+      localStorage.setItem(userSpecificKey, JSON.stringify(items));
+      localStorage.setItem(`${userSpecificKey}_discount`, discountValue);
+      localStorage.setItem(`${userSpecificKey}_promoCode`, promoCodeValue);
+      
+      // Dispatch storage event for cross-tab synchronization
+      window.dispatchEvent(new StorageEvent('storage', {
+        key: userSpecificKey,
+        newValue: JSON.stringify(items)
+      }));
+      
+      // Dispatch custom event for cart updates within the same tab
+      window.dispatchEvent(new CustomEvent('cartUpdated', { 
+        detail: { items, discount: discountValue, promoCode: promoCodeValue } 
+      }));
+    } catch (error) {
+      console.error('Error saving cart to Firestore:', error);
+    } finally {
+      isSyncingRef.current = false;
+      
+      // Process any pending updates that came in during save
+      if (pendingUpdatesRef.current) {
+        const { items: pendingItems, discount: pendingDiscount, promoCode: pendingPromoCode } = pendingUpdatesRef.current;
+        setCartItems(pendingItems);
+        setDiscount(pendingDiscount);
+        setPromoCode(pendingPromoCode);
+        pendingUpdatesRef.current = null;
         
-        // Also update localStorage with user-specific key
-        const userSpecificKey = `cart_${currentUser.uid}`;
-        localStorage.setItem(userSpecificKey, JSON.stringify(cartItems));
-        localStorage.setItem(`${userSpecificKey}_discount`, discount);
-        localStorage.setItem(`${userSpecificKey}_promoCode`, promoCode);
-      } catch (error) {
-        console.error('Error saving cart to Firestore:', error);
+        // Save these pending updates (will trigger a new save cycle)
+        setTimeout(() => {
+          saveCartToFirestore(pendingItems, pendingDiscount, pendingPromoCode);
+        }, 100);
       }
-    };
-
-    saveCart();
+    }
+  };
+  
+  // Save cart when it changes
+  useEffect(() => {
+    if (loading) return;
+    saveCartToFirestore(cartItems, discount, promoCode);
   }, [cartItems, discount, promoCode, currentUser, loading]);
 
   // Calculate totals
@@ -152,6 +223,14 @@ export function CartProvider({ children }) {
         };
         console.log("Creating new cart item:", newItem);
         updatedCart = [...cartItems, newItem];
+        
+        // Track add to cart event with analytics
+        try {
+          const analytics = require('../utils/analytics').default;
+          analytics.ecommerce.addToCart(newItem);
+        } catch (error) {
+          console.error('Error tracking add to cart event:', error);
+        }
       }
 
       console.log("Updated cart:", updatedCart);
@@ -159,12 +238,14 @@ export function CartProvider({ children }) {
       // Update state
       setCartItems(updatedCart);
       
-      // Update localStorage with the appropriate key
-      const storageKey = currentUser ? `cart_${currentUser.uid}` : 'cart';
-      localStorage.setItem(storageKey, JSON.stringify(updatedCart));
+      // Trigger cart update event
+      window.dispatchEvent(new CustomEvent('cartUpdated', { 
+        detail: { items: updatedCart, discount, promoCode } 
+      }));
       
-      // Force a re-render by dispatching a storage event
-      window.dispatchEvent(new Event('storage'));
+      // Ensure we have a valid product name for the notification
+      const productName = product.name_en || product.name || "Product";
+      showNotification(`Added ${productName} to cart`, 'success');
       
       return { success: true, authRequired: false, cart: updatedCart };
     } catch (error) {
@@ -186,31 +267,47 @@ export function CartProvider({ children }) {
     
     setCartItems(updatedCart);
     
-    // Update localStorage with the appropriate key
-    const storageKey = currentUser ? `cart_${currentUser.uid}` : 'cart';
-    localStorage.setItem(storageKey, JSON.stringify(updatedCart));
+    // Trigger cart update event
+    window.dispatchEvent(new CustomEvent('cartUpdated', { 
+      detail: { items: updatedCart, discount, promoCode } 
+    }));
     
-    // Trigger storage event for other components to listen
-    window.dispatchEvent(new Event('storage'));
+    showNotification(`Updated quantity of ${productId} in size ${size}`, 'success');
     
     return updatedCart;
   };
 
   // Remove item from cart
   const removeItem = (productId, size) => {
-    const updatedCart = cartItems.filter(item => 
-      !(item.id === productId && item.size === size)
-    );
-    setCartItems(updatedCart);
-    
-    // Update localStorage with the appropriate key
-    const storageKey = currentUser ? `cart_${currentUser.uid}` : 'cart';
-    localStorage.setItem(storageKey, JSON.stringify(updatedCart));
-    
-    // Trigger storage event for other components to listen
-    window.dispatchEvent(new Event('storage'));
-    
-    return updatedCart;
+    try {
+      // Find the item to be removed
+      const itemToRemove = cartItems.find(item => item.id === productId && item.size === size);
+      
+      if (!itemToRemove) {
+        console.warn("Item not found in cart:", productId, size);
+        return;
+      }
+      
+      // Track remove from cart event with analytics
+      try {
+        const analytics = require('../utils/analytics').default;
+        analytics.ecommerce.removeFromCart(itemToRemove);
+      } catch (error) {
+        console.error('Error tracking remove from cart event:', error);
+      }
+      
+      // Filter out the item
+      const updatedCart = cartItems.filter(item => !(item.id === productId && item.size === size));
+      
+      // Update state
+      setCartItems(updatedCart);
+      
+      // Show notification
+      showNotification('Item removed from cart', 'info');
+    } catch (error) {
+      console.error("Error removing item from cart:", error);
+      showNotification('Failed to remove item from cart', 'error');
+    }
   };
 
   // Clear cart
@@ -219,14 +316,12 @@ export function CartProvider({ children }) {
     setDiscount(0);
     setPromoCode('');
     
-    // Update localStorage with the appropriate key
-    const storageKey = currentUser ? `cart_${currentUser.uid}` : 'cart';
-    localStorage.setItem(storageKey, '[]');
-    localStorage.setItem(`${storageKey}_discount`, '0');
-    localStorage.setItem(`${storageKey}_promoCode`, '');
+    // Trigger cart update event
+    window.dispatchEvent(new CustomEvent('cartUpdated', { 
+      detail: { items: [], discount: 0, promoCode: '' } 
+    }));
     
-    // Trigger storage event for other components to listen
-    window.dispatchEvent(new Event('storage'));
+    showNotification('Cart cleared', 'info');
   };
 
   // Apply promo code
@@ -236,22 +331,10 @@ export function CartProvider({ children }) {
     if (code.toLowerCase() === 'welcome10') {
       setDiscount(10);
       setPromoCode(code);
-      
-      // Update localStorage with the appropriate key
-      const storageKey = currentUser ? `cart_${currentUser.uid}` : 'cart';
-      localStorage.setItem(`${storageKey}_discount`, '10');
-      localStorage.setItem(`${storageKey}_promoCode`, code);
-      
       return { success: true, discount: 10 };
     } else if (code.toLowerCase() === 'summer20') {
       setDiscount(20);
       setPromoCode(code);
-      
-      // Update localStorage with the appropriate key
-      const storageKey = currentUser ? `cart_${currentUser.uid}` : 'cart';
-      localStorage.setItem(`${storageKey}_discount`, '20');
-      localStorage.setItem(`${storageKey}_promoCode`, code);
-      
       return { success: true, discount: 20 };
     } else {
       return { success: false, message: 'Invalid promo code' };
@@ -265,13 +348,18 @@ export function CartProvider({ children }) {
     try {
       // Get anonymous cart from localStorage
       const anonymousCart = JSON.parse(localStorage.getItem('cart') || '[]');
-      const anonymousDiscount = Number(localStorage.getItem('cartDiscount') || '0');
-      const anonymousPromoCode = localStorage.getItem('cartPromoCode') || '';
+      const anonymousDiscount = Number(localStorage.getItem('cart_discount') || '0');
+      const anonymousPromoCode = localStorage.getItem('cart_promoCode') || '';
       
       if (anonymousCart.length === 0) return; // No anonymous cart to merge
       
-      // Merge with current user cart
-      const mergedCart = [...cartItems];
+      // Get user cart from Firestore
+      const userCartRef = doc(db, 'userCarts', currentUser.uid);
+      const userCartDoc = await getDoc(userCartRef);
+      const userCart = userCartDoc.exists() ? userCartDoc.data().items || [] : [];
+      
+      // Merge carts, handling duplicates properly
+      const mergedCart = [...userCart];
       
       // Add items from anonymous cart, updating quantities if item already exists
       anonymousCart.forEach(anonymousItem => {
@@ -297,26 +385,10 @@ export function CartProvider({ children }) {
         setPromoCode(anonymousPromoCode);
       }
       
-      // Save to Firestore and user-specific localStorage
-      const userCartRef = doc(db, 'userCarts', currentUser.uid);
-      await setDoc(userCartRef, {
-        items: mergedCart,
-        discount: Math.max(discount, anonymousDiscount),
-        promoCode: anonymousDiscount > discount ? anonymousPromoCode : promoCode,
-        updatedAt: serverTimestamp(),
-        userId: currentUser.uid
-      }, { merge: true });
-      
-      // Update user-specific localStorage
-      const userSpecificKey = `cart_${currentUser.uid}`;
-      localStorage.setItem(userSpecificKey, JSON.stringify(mergedCart));
-      localStorage.setItem(`${userSpecificKey}_discount`, Math.max(discount, anonymousDiscount));
-      localStorage.setItem(`${userSpecificKey}_promoCode`, anonymousDiscount > discount ? anonymousPromoCode : promoCode);
-      
       // Clear anonymous cart
       localStorage.setItem('cart', '[]');
-      localStorage.setItem('cartDiscount', '0');
-      localStorage.setItem('cartPromoCode', '');
+      localStorage.setItem('cart_discount', '0');
+      localStorage.setItem('cart_promoCode', '');
       
       console.log("Merged anonymous cart with user cart:", mergedCart);
     } catch (error) {
@@ -331,6 +403,90 @@ export function CartProvider({ children }) {
     }
   }, [currentUser, loading]);
 
+  // Listen for storage events (cross-tab synchronization)
+  useEffect(() => {
+    const handleStorageChange = (e) => {
+      if (!currentUser) return;
+      
+      const userSpecificKey = `cart_${currentUser.uid}`;
+      
+      if (e.key === userSpecificKey && e.newValue) {
+        try {
+          const newCart = JSON.parse(e.newValue);
+          setCartItems(newCart);
+        } catch (error) {
+          console.error('Error handling storage event:', error);
+        }
+      }
+    };
+    
+    window.addEventListener('storage', handleStorageChange);
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, [currentUser]);
+
+  // Add validation method for stock before checkout
+  const validateStock = async () => {
+    if (!cartItems.length) return { valid: true, outOfStockItems: [] };
+    
+    try {
+      const outOfStock = [];
+      
+      // Check stock for each item
+      for (const item of cartItems) {
+        try {
+          // Get product directly from Firestore
+          const productRef = doc(db, 'products', item.id);
+          const productSnapshot = await getDoc(productRef);
+          
+          if (!productSnapshot.exists()) {
+            outOfStock.push({ ...item, reason: 'Product not found' });
+            continue;
+          }
+          
+          const product = productSnapshot.data();
+          
+          // Check both stock and sizes fields to handle different product data formats
+          const stockField = product.stock || {};
+          const sizesField = product.sizes || {};
+          
+          // Get stock from either field, prioritizing the stock field
+          const availableStock = stockField[item.size] !== undefined ? 
+            stockField[item.size] : 
+            sizesField[item.size] !== undefined ? 
+              sizesField[item.size] : 
+              0;
+          
+          console.log(`Stock check for ${item.name} (${item.size}): Available=${availableStock}, Requested=${item.quantity}`);
+          
+          if (availableStock < item.quantity) {
+            outOfStock.push({ 
+              ...item, 
+              reason: 'Insufficient stock', 
+              available: availableStock
+            });
+          }
+        } catch (error) {
+          console.error(`Error validating stock for product ${item.id}:`, error);
+          outOfStock.push({ ...item, reason: 'Error checking availability' });
+        }
+      }
+      
+      return { 
+        valid: outOfStock.length === 0,
+        outOfStockItems: outOfStock
+      };
+    } catch (err) {
+      console.error('Error validating stock:', err);
+      return { 
+        valid: false, 
+        outOfStockItems: [],
+        error: 'Could not validate stock availability'
+      };
+    }
+  };
+
   const value = {
     cartItems,
     loading,
@@ -344,7 +500,9 @@ export function CartProvider({ children }) {
     removeItem,
     clearCart,
     applyPromoCode,
-    itemCount: cartItems.reduce((count, item) => count + item.quantity, 0)
+    validateStock,
+    itemCount: cartItems.reduce((count, item) => count + item.quantity, 0),
+    isEmpty: cartItems.length === 0
   };
 
   return (

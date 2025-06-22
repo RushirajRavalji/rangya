@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
 import Link from 'next/link';
-import { FiFilter, FiX, FiChevronDown, FiLoader, FiGrid, FiList, FiAlertCircle, FiRefreshCw } from 'react-icons/fi';
+import { FiFilter, FiX, FiChevronDown, FiLoader, FiGrid, FiList, FiRefreshCw } from 'react-icons/fi';
 import { getProducts } from '../../utils/productService';
 import ProductCard from '../../components/products/ProductCard';
 import SEO from '../../components/common/SEO';
@@ -13,7 +13,6 @@ export default function Products() {
   
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
   const [lastDoc, setLastDoc] = useState(null);
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -68,7 +67,6 @@ export default function Products() {
     async function fetchProducts() {
       try {
         setLoading(true);
-        setError(null);
         
         console.log(`Products page: Fetching products with filters (attempt ${retryCount + 1}):`, filters);
         
@@ -90,11 +88,9 @@ export default function Products() {
             setHasMore((result.products || []).length === 24);
           } else {
             console.warn("Products page: No products returned from service");
-            setError('Failed to load products. Please try again.');
           }
         } catch (err) {
           console.error('Products page: Error fetching products:', err);
-          setError('Failed to load products');
           
           // Try API route as fallback
           try {
@@ -116,7 +112,6 @@ export default function Products() {
             if (data && data.products && Array.isArray(data.products)) {
               console.log(`Products page: Successfully loaded ${data.products.length} products from API`);
               setProducts(data.products);
-              setError(null); // Clear error if API call succeeds
             } else {
               throw new Error('Invalid data format returned from API');
             }
@@ -127,7 +122,6 @@ export default function Products() {
         }
       } catch (err) {
         console.error('Products page: Error in fetchProducts:', err);
-        setError('Failed to load products. Please try again.');
       } finally {
         setLoading(false);
       }
@@ -203,9 +197,9 @@ export default function Products() {
   // Generate page title and description based on category
   const getPageTitle = () => {
     if (filters.category && filters.category !== 'All') {
-      return `${filters.category} | Ranga`;
+      return `${filters.category} | Rangya`;
     }
-    return 'All Products | Ranga';
+    return 'All Products | Rangya';
   };
 
   const getPageDescription = () => {
@@ -235,22 +229,6 @@ export default function Products() {
             </p>
           )}
         </div>
-        
-        {/* Error Message */}
-        {error && (
-          <div className="mb-6 bg-red-50 border border-red-200 rounded-md p-4 flex items-center justify-between">
-            <div className="flex items-center">
-              <FiAlertCircle className="text-red-500 mr-2" />
-              <p className="text-red-700">{error}</p>
-            </div>
-            <button 
-              onClick={handleRetry}
-              className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 flex items-center"
-            >
-              <FiRefreshCw className="mr-2" /> Retry
-            </button>
-          </div>
-        )}
         
         {/* Filters and Sort */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
@@ -331,57 +309,79 @@ export default function Products() {
           </div>
         )}
         
-        {/* Loading State */}
-        {loading ? (
-          <div className="py-12 flex items-center justify-center">
-            <div className="flex flex-col items-center">
-              <FiLoader size={30} className="animate-spin text-indigo-deep mb-4" />
-              <p>Loading products...</p>
-            </div>
-          </div>
-        ) : (
-          <>
-            {/* Products Grid/List */}
-            {products.length > 0 ? (
-              <>
-                <div className={`grid ${view === 'grid' ? 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4' : 'grid-cols-1'} gap-6 mb-8`}>
-                  {products.map((product) => (
-                    <ProductCard key={product.id} product={product} view={view} />
-                  ))}
-                </div>
-                
-                {/* Load More Button */}
-                {hasMore && (
-                  <div className="text-center py-6">
-                    <button
-                      onClick={loadMoreProducts}
-                      disabled={loadingMore}
-                      className={`px-6 py-2 rounded-md ${loadingMore ? 'bg-gray-300 cursor-not-allowed' : 'bg-indigo-deep text-white hover:bg-blue-800'}`}
-                    >
-                      {loadingMore ? (
-                        <span className="flex items-center">
-                          <FiLoader className="animate-spin mr-2" />
-                          Loading...
-                        </span>
-                      ) : (
-                        'Load More Products'
-                      )}
-                    </button>
-                  </div>
-                )}
-              </>
-            ) : (
-              <div className="text-center py-12 bg-gray-50 rounded-lg border border-gray-200">
-                <p className="text-gray-600 mb-4">No products found in this category.</p>
-                <button 
-                  onClick={handleRetry}
-                  className="px-4 py-2 bg-indigo-deep text-white rounded hover:bg-blue-800 flex items-center mx-auto"
-                >
-                  <FiRefreshCw className="mr-2" /> Refresh Products
-                </button>
+        {/* Products Grid */}
+        <div className="bg-white shadow-sm rounded-lg overflow-hidden">
+          {loading ? (
+            <div className="flex justify-center items-center h-64 p-8">
+              <div className="text-center">
+                <FiLoader className="animate-spin h-8 w-8 text-indigo-deep mx-auto mb-4" />
+                <p className="text-gray-700 font-medium">Loading products...</p>
+                <p className="text-gray-500 text-sm mt-2 max-w-md">
+                  Please wait while we load our collection...
+                </p>
               </div>
-            )}
-          </>
+            </div>
+          ) : products.length === 0 ? (
+            <div className="p-6 text-center">
+              <p className="text-gray-500 mb-4">We're currently updating our collection in this category.</p>
+              <button 
+                onClick={handleRetry} 
+                className="inline-flex items-center px-4 py-2 bg-indigo-deep text-white rounded hover:bg-indigo-700"
+              >
+                <FiRefreshCw className="mr-2" /> Refresh Products
+              </button>
+            </div>
+          ) : (
+            <>
+              <div className="p-4 flex justify-between items-center border-b border-gray-200">
+                <p className="text-gray-600 text-sm">
+                  Showing <span className="font-medium">{products.length}</span> products
+                </p>
+                <div className="flex items-center space-x-2">
+                  <button
+                    className={`p-2 rounded-md ${view === 'grid' ? 'bg-gray-200' : 'bg-white hover:bg-gray-100'}`}
+                    onClick={() => setView('grid')}
+                    aria-label="Grid view"
+                  >
+                    <FiGrid className="text-gray-700" />
+                  </button>
+                  <button
+                    className={`p-2 rounded-md ${view === 'list' ? 'bg-gray-200' : 'bg-white hover:bg-gray-100'}`}
+                    onClick={() => setView('list')}
+                    aria-label="List view"
+                  >
+                    <FiList className="text-gray-700" />
+                  </button>
+                </div>
+              </div>
+              
+              <div className={`p-4 ${view === 'grid' ? 'grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4' : 'space-y-4'}`}>
+                {products.map((product) => (
+                  <ProductCard key={product.id} product={product} view={view} />
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Load More Button */}
+        {products.length > 0 && hasMore && (
+          <div className="mt-8 text-center">
+            <button
+              onClick={loadMoreProducts}
+              disabled={loadingMore}
+              className="bg-white border border-gray-300 text-gray-700 px-6 py-3 rounded-md hover:bg-gray-50 disabled:opacity-50 flex items-center mx-auto"
+            >
+              {loadingMore ? (
+                <>
+                  <FiLoader className="animate-spin mr-2" />
+                  Loading more...
+                </>
+              ) : (
+                'Load More Products'
+              )}
+            </button>
+          </div>
         )}
       </div>
     </>

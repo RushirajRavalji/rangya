@@ -129,4 +129,64 @@ export const formatPhoneNumber = (phoneNumber) => {
   
   // Return as is if not matching expected format
   return phoneNumber;
+};
+
+/**
+ * Sanitize input to prevent XSS attacks
+ * @param {string} input - The input string to sanitize
+ * @returns {string} Sanitized string
+ */
+export const sanitizeInput = (input) => {
+  if (typeof input !== 'string') {
+    return '';
+  }
+  
+  return input
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
+    .replace(/\\/g, '&#92;')
+    .replace(/`/g, '&#96;');
+};
+
+/**
+ * Validate email address format
+ * @param {string} email - Email address to validate
+ * @returns {boolean} Whether the email is valid
+ */
+export const validateEmail = (email) => {
+  if (!email) return false;
+  
+  // RFC 5322 compliant email regex
+  const emailRegex = /^(([^<>()\[\]\\.,;:\s@"]+(\.[^<>()\[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/;
+  return emailRegex.test(email);
+};
+
+/**
+ * Validate phone number format
+ * @param {string} phone - Phone number to validate
+ * @returns {boolean} Whether the phone number is valid
+ */
+export const validatePhone = (phone) => {
+  if (!phone) return false;
+  
+  // Basic phone validation - allows international formats
+  const phoneRegex = /^[+]?[(]?[0-9]{3}[)]?[-\s.]?[0-9]{3}[-\s.]?[0-9]{4,6}$/;
+  return phoneRegex.test(phone.replace(/\s/g, ''));
+};
+
+/**
+ * Capitalize the first letter of each word
+ * @param {string} text - Text to capitalize
+ * @returns {string} Capitalized text
+ */
+export const capitalizeWords = (text) => {
+  if (!text) return '';
+  
+  return text
+    .toLowerCase()
+    .split(' ')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
 }; 

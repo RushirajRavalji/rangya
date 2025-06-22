@@ -1,792 +1,240 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
-import Head from 'next/head';
 import Link from 'next/link';
-import { FiArrowLeft, FiLoader, FiCheck, FiAlertCircle, FiCreditCard, FiChevronRight, FiShoppingBag, FiChevronDown } from 'react-icons/fi';
-import { useAuth } from '../contexts/AuthContext';
-import { createOrder } from '../utils/orderService';
 import { useCart } from '../contexts/CartContext';
+import { useAuth } from '../contexts/AuthContext';
 import { useNotification } from '../contexts/NotificationContext';
-import { getProductById } from '../utils/productService';
+import Layout from '../components/layout/Layout';
+import CheckoutForm from '../components/checkout/CheckoutForm';
+import Image from 'next/image';
+import { FiAlertCircle, FiArrowLeft, FiShoppingBag, FiLoader } from 'react-icons/fi';
+import SEO from '../components/common/SEO';
 
-export default function Checkout() {
+const CheckoutPage = () => {
   const router = useRouter();
-  const { currentUser } = useAuth();
-  const { cartItems, subtotal, total, clearCart } = useCart();
+  const { cartItems, total, loading: cartLoading, isEmpty } = useCart();
+  const { currentUser, loading: authLoading } = useAuth();
   const { showNotification } = useNotification();
   
-  const [loading, setLoading] = useState(true); 
-  const [placingOrder, setPlacingOrder] = useState(false);
-  const [error, setError] = useState(null);
-  const [step, setStep] = useState(1);
-  const [stockValidated, setStockValidated] = useState(false);
-  const [outOfStockItems, setOutOfStockItems] = useState([]);
+  const [orderPlaced, setOrderPlaced] = useState(false);
+  const [orderId, setOrderId] = useState(null);
   
-  // Form state
-  const [formData, setFormData] = useState({
-    // Shipping Information
-    firstName: '',
-    lastName: '',
-    email: '',
-    phone: '',
-    address: '',
-    city: '',
-    state: '',
-    pincode: '',
-    
-    // Payment Information
-    paymentMethod: 'card',
-    cardNumber: '',
-    cardName: '',
-    expiryDate: '',
-    cvv: '',
-    upiId: ''
-  });
-  
-  // Redirect if not logged in
+  // Redirect to cart if cart is empty
   useEffect(() => {
-    const checkAuth = async () => {
-      if (!currentUser && !loading) {
-        router.push(`/login?redirect=${encodeURIComponent('/checkout')}`);
-        showNotification('Please log in to proceed with checkout', 'warning');
-      }
-    };
-    
-    // Only run this check once when loading is complete
-    if (!loading) {
-      checkAuth();
-    }
-  }, [loading]);
-  
-  // Redirect if cart is empty
-  useEffect(() => {
-    if (cartItems.length === 0 && !loading) {
+    if (!cartLoading && isEmpty) {
       router.push('/cart');
-      showNotification('Your cart is empty', 'warning');
+      showNotification('Your cart is empty. Add some items before proceeding to checkout.', 'warning');
     }
-  }, [cartItems, router, showNotification, loading]);
-
-  // Validate stock availability
+  }, [cartLoading, isEmpty, router, showNotification]);
+  
+  // Redirect to login if not authenticated
   useEffect(() => {
-    const validateStock = async () => {
-      if (!cartItems.length || stockValidated) return;
-      
+    if (!authLoading && !currentUser) {
+      router.push('/login?redirect=checkout');
+      showNotification('Please login to continue with checkout', 'info');
+    }
+  }, [authLoading, currentUser, router, showNotification]);
+  
+  // Enforce email verification
+  useEffect(() => {
+    if (!authLoading && currentUser && !currentUser.emailVerified) {
+      router.push('/verify-email?redirect=checkout');
+      showNotification('Please verify your email address before checkout', 'warning');
+    }
+  }, [authLoading, currentUser, router, showNotification]);
+  
+  // Track checkout start with analytics
+  useEffect(() => {
+    if (!authLoading && currentUser && cartItems.length > 0) {
       try {
-        setLoading(true);
-        const outOfStock = [];
-        
-        // Check stock for each item
-        for (const item of cartItems) {
-          const product = await getProductById(item.id);
-          
-          if (!product) {
-            outOfStock.push({ ...item, reason: 'Product not found' });
-            continue;
-          }
-          
-          if (!product.stock || !product.stock[item.size] || product.stock[item.size] < item.quantity) {
-            outOfStock.push({ 
-              ...item, 
-              reason: 'Insufficient stock', 
-              available: product.stock ? product.stock[item.size] || 0 : 0 
-            });
-          }
-        }
-        
-        setOutOfStockItems(outOfStock);
-        setStockValidated(true);
-        
-        if (outOfStock.length > 0) {
-          setError(`Some items in your cart are no longer available in the requested quantity.`);
-        }
-      } catch (err) {
-        console.error('Error validating stock:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    
-    validateStock();
-  }, [cartItems, stockValidated]);
-  
-  // Load user data if logged in
-  useEffect(() => {
-    if (currentUser) {
-      setFormData(prev => ({
-        ...prev,
-        firstName: currentUser.displayName?.split(' ')[0] || '',
-        lastName: currentUser.displayName?.split(' ')[1] || '',
-        email: currentUser.email || '',
-      }));
-      setLoading(false);
-    }
-  }, [currentUser]);
-  
-  // Handle form input changes
-  const handleInputChange = (e) => {
-    const { name, value, type, checked } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: type === 'checkbox' ? checked : value
-    }));
-  };
-  
-  // Navigate to next step
-  const goToNextStep = (e) => {
-    e.preventDefault();
-    
-    // Check if user is logged in
-    if (!currentUser) {
-      router.push(`/login?redirect=${encodeURIComponent('/checkout')}`);
-      return;
-    }
-    
-    // Check for out of stock items
-    if (outOfStockItems.length > 0) {
-      setError(`Some items in your cart are no longer available in the requested quantity.`);
-      return;
-    }
-    
-    // Validate current step
-    if (step === 1) {
-      if (!formData.firstName || !formData.lastName || !formData.email || !formData.phone || 
-          !formData.address || !formData.city || !formData.state || !formData.pincode) {
-        setError('Please fill in all required fields');
-        return;
+        const analytics = require('../utils/analytics').default;
+        analytics.ecommerce.beginCheckout(cartItems, total);
+      } catch (error) {
+        console.error('Error tracking checkout start:', error);
       }
     }
-    
-    setStep(step + 1);
-    setError(null);
+  }, [authLoading, currentUser, cartItems, total]);
+  
+  // Handle order placement
+  const handleOrderPlaced = (newOrderId) => {
+    setOrderId(newOrderId);
+    setOrderPlaced(true);
   };
   
-  // Navigate to previous step
-  const goToPreviousStep = () => {
-    setStep(step - 1);
-    setError(null);
-  };
-  
-  // Place order
-  const handlePlaceOrder = async (e) => {
-    e.preventDefault();
-
-    // Check if user is logged in
-    if (!currentUser) {
-      router.push(`/login?redirect=${encodeURIComponent('/checkout')}`);
-      return;
-    }
-    
-    // Check for out of stock items one more time
-    if (outOfStockItems.length > 0) {
-      setError(`Some items in your cart are no longer available in the requested quantity.`);
-      return;
-    }
-    
+  // Track successful purchase with analytics
+  const trackPurchase = (orderId, orderNumber) => {
     try {
-      setPlacingOrder(true);
-      setError(null);
+      const analytics = require('../utils/analytics').default;
       
-      // Create order object
       const orderData = {
-        userId: currentUser.uid,
-        items: cartItems,
-        subtotal,
-        shipping: 0,
-        total,
-        status: 'pending',
-        paymentMethod: formData.paymentMethod,
-        paymentStatus: formData.paymentMethod === 'cod' ? 'pending' : 'paid',
-        customer: {
-          name: `${formData.firstName} ${formData.lastName}`,
-          email: formData.email,
-          phone: formData.phone
-        },
-        shippingAddress: {
-          fullName: `${formData.firstName} ${formData.lastName}`,
-          addressLine1: formData.address,
-          addressLine2: '',
-          city: formData.city,
-          state: formData.state,
-          postalCode: formData.pincode,
-          country: 'India'
-        }
+        orderNumber,
+        total: total + (total > 1000 ? 0 : 100) + Math.round(total * 0.18 * 100) / 100,
+        tax: Math.round(total * 0.18 * 100) / 100,
+        shippingCost: total > 1000 ? 0 : 100,
+        items: cartItems
       };
       
-      // Create order in Firestore
-      const orderId = await createOrder(orderData);
-      
-      // Clear cart
-      clearCart();
-      
-      // Show success notification
-      showNotification('Order placed successfully!', 'success');
-      
-      // Redirect to order confirmation
-      router.push(`/order-confirmation?id=${orderId}`);
-    } catch (err) {
-      console.error('Error placing order:', err);
-      setError('Failed to place your order. Please try again.');
-      showNotification('Failed to place order', 'error');
-      setPlacingOrder(false);
+      analytics.ecommerce.purchase(orderData);
+    } catch (error) {
+      console.error('Error tracking purchase:', error);
     }
   };
   
-  // Format card number with spaces
-  const formatCardNumber = (value) => {
-    const v = value.replace(/\s+/g, '').replace(/[^0-9]/gi, '');
-    const matches = v.match(/\d{4,16}/g);
-    const match = matches && matches[0] || '';
-    const parts = [];
-    
-    for (let i = 0; i < match.length; i += 4) {
-      parts.push(match.substring(i, i + 4));
-    }
-    
-    if (parts.length) {
-      return parts.join(' ');
-    } else {
-      return value;
-    }
-  };
-  
-  // Handle card number input
-  const handleCardNumberChange = (e) => {
-    const value = formatCardNumber(e.target.value);
-    setFormData(prev => ({ ...prev, cardNumber: value }));
-  };
-  
-  // Render checkout steps
-  const renderCheckoutStep = () => {
-    switch (step) {
-      case 1:
-        return renderShippingStep();
-      case 2:
-        return renderPaymentStep();
-      case 3:
-        return renderReviewStep();
-      default:
-        return renderShippingStep();
-    }
-  };
-  
-  // Shipping information step
-  const renderShippingStep = () => {
+  // Show loading state
+  if (cartLoading || authLoading) {
     return (
-      <div>
-        <h2 className="text-xl font-semibold mb-6">Shipping Information</h2>
-        
-        <form onSubmit={goToNextStep}>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">First Name *</label>
-              <input
-                type="text"
-                name="firstName"
-                value={formData.firstName}
-                onChange={handleInputChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-deep"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Last Name *</label>
-              <input
-                type="text"
-                name="lastName"
-                value={formData.lastName}
-                onChange={handleInputChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-deep"
-                required
-              />
-            </div>
+      <>
+        <SEO 
+          title="Checkout | Rangya"
+          description="Secure checkout for your Rangya order"
+        />
+        <div className="container mx-auto px-4 py-12 min-h-screen flex items-center justify-center">
+          <div className="text-center">
+            <FiLoader className="animate-spin h-12 w-12 mx-auto text-indigo-600" />
+            <p className="mt-4 text-lg text-gray-600">Loading checkout...</p>
           </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
-              <input
-                type="email"
-                name="email"
-                value={formData.email}
-                onChange={handleInputChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-deep"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number *</label>
-              <input
-                type="tel"
-                name="phone"
-                value={formData.phone}
-                onChange={handleInputChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-deep"
-                required
-              />
-            </div>
-          </div>
-          
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Address *</label>
-            <input
-              type="text"
-              name="address"
-              value={formData.address}
-              onChange={handleInputChange}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-deep"
-              required
-            />
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">City *</label>
-              <input
-                type="text"
-                name="city"
-                value={formData.city}
-                onChange={handleInputChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-deep"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">State *</label>
-              <input
-                type="text"
-                name="state"
-                value={formData.state}
-                onChange={handleInputChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-deep"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Pincode *</label>
-              <input
-                type="text"
-                name="pincode"
-                value={formData.pincode}
-                onChange={handleInputChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-deep"
-                required
-              />
-            </div>
-          </div>
-          
-          {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-6">
-              {error}
-            </div>
-          )}
-          
-          <div className="flex justify-between">
-            <Link href="/cart" className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 flex items-center">
-              <FiArrowLeft className="mr-2" /> Back to Cart
-            </Link>
-            <button
-              type="submit"
-              className="px-6 py-2 bg-indigo-deep text-white rounded-md hover:bg-blue-800"
-            >
-              Continue to Payment <FiChevronRight className="inline ml-1" />
-            </button>
-          </div>
-        </form>
-      </div>
+        </div>
+      </>
     );
-  };
+  }
   
-  // Payment information step
-  const renderPaymentStep = () => {
+  // Show empty cart message
+  if (isEmpty) {
     return (
-      <div>
-        <h2 className="text-xl font-semibold mb-6">Payment Method</h2>
-        
-        <div className="mb-6">
-          <div className="flex flex-col space-y-4">
-            <label className="flex items-center p-4 border rounded-md cursor-pointer hover:bg-gray-50">
-              <input
-                type="radio"
-                name="paymentMethod"
-                value="card"
-                checked={formData.paymentMethod === 'card'}
-                onChange={handleInputChange}
-                className="mr-2"
-              />
-              <FiCreditCard className="mr-2" /> Credit / Debit Card
-            </label>
-            
-            <label className="flex items-center p-4 border rounded-md cursor-pointer hover:bg-gray-50">
-              <input
-                type="radio"
-                name="paymentMethod"
-                value="upi"
-                checked={formData.paymentMethod === 'upi'}
-                onChange={handleInputChange}
-                className="mr-2"
-              />
-              <span className="mr-2">UPI</span>
-            </label>
-            
-            <label className="flex items-center p-4 border rounded-md cursor-pointer hover:bg-gray-50">
-              <input
-                type="radio"
-                name="paymentMethod"
-                value="cod"
-                checked={formData.paymentMethod === 'cod'}
-                onChange={handleInputChange}
-                className="mr-2"
-              />
-              <span className="mr-2">Cash on Delivery</span>
-            </label>
+      <>
+        <SEO 
+          title="Empty Cart | Rangya"
+          description="Your shopping cart is empty"
+        />
+        <div className="container mx-auto px-4 py-12 min-h-screen">
+          <div className="text-center max-w-md mx-auto bg-white p-8 rounded-lg shadow-md">
+            <FiShoppingBag className="h-16 w-16 mx-auto text-gray-400" />
+            <h1 className="mt-4 text-2xl font-bold text-gray-900">Your cart is empty</h1>
+            <p className="mt-2 text-gray-600">Add some items to your cart before proceeding to checkout.</p>
+            <div className="mt-6">
+              <Link href="/products" className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                <FiShoppingBag className="mr-2" /> Browse Products
+              </Link>
+            </div>
           </div>
         </div>
-        
-        {formData.paymentMethod === 'card' && (
-          <div className="mb-6 border p-4 rounded-md">
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Card Number</label>
-              <input
-                type="text"
-                name="cardNumber"
-                value={formData.cardNumber}
-                onChange={handleCardNumberChange}
-                placeholder="1234 5678 9012 3456"
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-deep"
-                maxLength="19"
-              />
-            </div>
-            
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Name on Card</label>
-              <input
-                type="text"
-                name="cardName"
-                value={formData.cardName}
-                onChange={handleInputChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-deep"
-              />
-            </div>
-            
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Expiry Date</label>
-                <input
-                  type="text"
-                  name="expiryDate"
-                  value={formData.expiryDate}
-                  onChange={handleInputChange}
-                  placeholder="MM/YY"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-deep"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">CVV</label>
-                <input
-                  type="text"
-                  name="cvv"
-                  value={formData.cvv}
-                  onChange={handleInputChange}
-                  placeholder="123"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-deep"
-                  maxLength="3"
-                />
-              </div>
-            </div>
-          </div>
-        )}
-        
-        {formData.paymentMethod === 'upi' && (
-          <div className="mb-6 border p-4 rounded-md">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">UPI ID</label>
-              <input
-                type="text"
-                name="upiId"
-                value={formData.upiId}
-                onChange={handleInputChange}
-                placeholder="name@upi"
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-deep"
-              />
-            </div>
-          </div>
-        )}
-        
-        {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-6">
-            {error}
-          </div>
-        )}
-        
-        <div className="flex justify-between">
-          <button
-            onClick={goToPreviousStep}
-            className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 flex items-center"
-          >
-            <FiArrowLeft className="mr-2" /> Back to Shipping
-          </button>
-          <button
-            onClick={goToNextStep}
-            className="px-6 py-2 bg-indigo-deep text-white rounded-md hover:bg-blue-800"
-          >
-            Review Order <FiChevronRight className="inline ml-1" />
-          </button>
-        </div>
-      </div>
+      </>
     );
-  };
+  }
   
-  // Order review step
-  const renderReviewStep = () => {
+  // Show login required message
+  if (!currentUser) {
     return (
-      <div>
-        <h2 className="text-xl font-semibold mb-6">Review Your Order</h2>
-        
-        <div className="mb-6 border rounded-md overflow-hidden">
-          <div className="bg-gray-50 p-4 border-b">
-            <h3 className="font-medium">Shipping Information</h3>
-          </div>
-          <div className="p-4">
-            <p className="font-medium">{formData.firstName} {formData.lastName}</p>
-            <p>{formData.address}</p>
-            <p>{formData.city}, {formData.state} {formData.pincode}</p>
-            <p>{formData.phone}</p>
-            <p>{formData.email}</p>
-          </div>
-        </div>
-        
-        <div className="mb-6 border rounded-md overflow-hidden">
-          <div className="bg-gray-50 p-4 border-b">
-            <h3 className="font-medium">Payment Method</h3>
-          </div>
-          <div className="p-4">
-            {formData.paymentMethod === 'card' && (
-              <p>Credit/Debit Card ending in {formData.cardNumber.slice(-4)}</p>
-            )}
-            {formData.paymentMethod === 'upi' && (
-              <p>UPI: {formData.upiId}</p>
-            )}
-            {formData.paymentMethod === 'cod' && (
-              <p>Cash on Delivery</p>
-            )}
-          </div>
-        </div>
-        
-        <div className="mb-6 border rounded-md overflow-hidden">
-          <div className="bg-gray-50 p-4 border-b">
-            <h3 className="font-medium">Order Summary</h3>
-          </div>
-          <div className="p-4">
-            <div className="divide-y">
-              {cartItems.map(item => (
-                <div 
-                  key={`${item.id}-${item.size}`} 
-                  className="py-3 flex items-center"
-                >
-                  <div className="w-16 h-16 bg-gray-200 rounded flex items-center justify-center mr-4">
-                    {item.image ? (
-                      <img src={item.image} alt={item.name} className="w-full h-full object-cover" />
-                    ) : (
-                      <FiShoppingBag className="text-gray-400" />
-                    )}
-                  </div>
-                  <div className="flex-1">
-                    <p className="font-medium text-sm">
-                      {item.name}
-                    </p>
-                    <p className="text-xs text-gray-600">Size: {item.size}, Qty: {item.quantity}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-medium">₹{(item.price * item.quantity).toFixed(2)}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-            
-            <div className="border-t mt-4 pt-4">
-              <div className="flex justify-between mb-2">
-                <span>Subtotal</span>
-                <span>₹{subtotal.toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between mb-2">
-                <span>Shipping</span>
-                <span>Free</span>
-              </div>
-              <div className="flex justify-between font-medium text-lg">
-                <span>Total</span>
-                <span>₹{total.toFixed(2)}</span>
-              </div>
+      <>
+        <SEO 
+          title="Login Required | Rangya"
+          description="Please login to continue with checkout"
+        />
+        <div className="container mx-auto px-4 py-12 min-h-screen">
+          <div className="text-center max-w-md mx-auto bg-white p-8 rounded-lg shadow-md">
+            <FiAlertCircle className="h-16 w-16 mx-auto text-yellow-500" />
+            <h1 className="mt-4 text-2xl font-bold text-gray-900">Login Required</h1>
+            <p className="mt-2 text-gray-600">Please login to your account to continue with checkout.</p>
+            <div className="mt-6">
+              <Link href="/login?redirect=checkout" className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                Login to Continue
+              </Link>
             </div>
           </div>
         </div>
-        
-        {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-6">
-            {error}
-          </div>
-        )}
-        
-        <div className="flex justify-between">
-          <button
-            onClick={goToPreviousStep}
-            className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 flex items-center"
-          >
-            <FiArrowLeft className="mr-2" /> Back to Payment
-          </button>
-          <button
-            onClick={handlePlaceOrder}
-            disabled={placingOrder}
-            className="px-6 py-2 bg-indigo-deep text-white rounded-md hover:bg-blue-800 flex items-center"
-          >
-            {placingOrder ? (
-              <>
-                <FiLoader className="animate-spin mr-2" />
-                Processing...
-              </>
-            ) : (
-              <>
-                Place Order <FiCheck className="ml-2" />
-              </>
-            )}
-          </button>
-        </div>
-      </div>
+      </>
     );
-  };
+  }
   
   return (
     <>
+      <SEO 
+        title="Checkout | Rangya"
+        description="Complete your order securely at Rangya"
+        noindex={true}
+      />
+      
       <div className="bg-gray-50 min-h-screen">
-        <Head>
-          <title>Checkout | Ranga</title>
-          <meta name="description" content="Complete your purchase" />
-        </Head>
-
         <div className="container mx-auto px-4 py-8">
-          <h1 className="text-2xl font-bold mb-8">Checkout</h1>
+          <div className="mb-6">
+            <Link href="/cart" className="inline-flex items-center text-indigo-600 hover:text-indigo-800">
+              <FiArrowLeft className="mr-2" /> Back to Cart
+            </Link>
+          </div>
           
-          {!currentUser && !loading && (
-            <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6 flex items-start">
-              <FiAlertCircle className="text-yellow-400 mr-3 mt-0.5 flex-shrink-0" />
-              <div>
-                <p className="font-medium text-yellow-800">Please log in to proceed with checkout</p>
-                <p className="text-sm text-yellow-700 mt-1">
-                  You need to be logged in to complete your purchase. 
-                  <Link href={`/login?redirect=${encodeURIComponent('/checkout')}`} className="ml-1 font-medium underline">
-                    Log in now
-                  </Link>
-                </p>
-              </div>
-            </div>
-          )}
+          <h1 className="text-3xl font-bold text-gray-900 mb-8">Checkout</h1>
           
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            {/* Checkout Steps */}
+            {/* Order Form */}
             <div className="lg:col-span-2">
-              <div className="bg-white rounded-lg shadow-sm p-6">
-                {/* Progress Steps */}
-                <div className="flex items-center justify-center mb-8">
-                  <div className={`flex flex-col items-center ${step >= 1 ? 'text-indigo-deep' : 'text-gray-400'}`}>
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center ${step >= 1 ? 'bg-indigo-deep text-white' : 'bg-gray-200 text-gray-600'}`}>
-                      1
-                    </div>
-                    <span className="text-xs mt-1">Shipping</span>
-                  </div>
-                  <div className={`flex-1 h-1 mx-2 ${step >= 2 ? 'bg-indigo-deep' : 'bg-gray-200'}`}></div>
-                  <div className={`flex flex-col items-center ${step >= 2 ? 'text-indigo-deep' : 'text-gray-400'}`}>
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center ${step >= 2 ? 'bg-indigo-deep text-white' : 'bg-gray-200 text-gray-600'}`}>
-                      2
-                    </div>
-                    <span className="text-xs mt-1">Payment</span>
-                  </div>
-                  <div className={`flex-1 h-1 mx-2 ${step >= 3 ? 'bg-indigo-deep' : 'bg-gray-200'}`}></div>
-                  <div className={`flex flex-col items-center ${step >= 3 ? 'text-indigo-deep' : 'text-gray-400'}`}>
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center ${step >= 3 ? 'bg-indigo-deep text-white' : 'bg-gray-200 text-gray-600'}`}>
-                      3
-                    </div>
-                    <span className="text-xs mt-1">Review</span>
-                  </div>
-                </div>
-                
-                {/* Display out of stock items */}
-                {outOfStockItems.length > 0 && (
-                  <div className="bg-yellow-50 border-l-4 border-yellow-500 p-4 mb-4">
-                    <h3 className="font-medium text-yellow-800 mb-2">The following items are no longer available:</h3>
-                    <ul className="list-disc pl-5 space-y-1">
-                      {outOfStockItems.map((item, index) => (
-                        <li key={index} className="text-yellow-700">
-                          {item.name} (Size: {item.size}) - {item.reason}
-                          {item.reason === 'Insufficient stock' && item.available > 0 && 
-                            ` (Only ${item.available} available)`}
-                        </li>
-                      ))}
-                    </ul>
-                    <p className="mt-2 text-sm text-yellow-700">
-                      Please return to your cart to update these items before proceeding.
-                    </p>
-                    <Link href="/cart" className="mt-2 inline-block text-yellow-800 hover:text-yellow-900 font-medium">
-                      Return to Cart
-                    </Link>
-                  </div>
-                )}
-                
-                {/* Loading indicator */}
-                {loading ? (
-                  <div className="flex justify-center py-8">
-                    <FiLoader className="animate-spin text-indigo-deep h-8 w-8" />
-                  </div>
-                ) : (
-                  /* Current Step Content */
-                  renderCheckoutStep()
-                )}
+              <div className="bg-white p-6 rounded-lg shadow-md">
+                <CheckoutForm onOrderPlaced={handleOrderPlaced} />
               </div>
             </div>
             
             {/* Order Summary */}
             <div className="lg:col-span-1">
-              <div className="bg-white rounded-lg shadow-sm p-6 sticky top-8">
-                <h2 className="text-lg font-semibold mb-4">Order Summary</h2>
+              <div className="bg-white p-6 rounded-lg shadow-md sticky top-24">
+                <h2 className="text-xl font-semibold mb-4">Order Summary</h2>
                 
-                <div className="divide-y">
-                  {cartItems.map(item => (
-                    <div 
-                      key={`${item.id}-${item.size}`} 
-                      className="py-3 flex items-center"
-                    >
-                      <div className="w-12 h-12 bg-gray-200 rounded flex items-center justify-center mr-3">
+                <div className="divide-y divide-gray-200">
+                  {cartItems.map((item) => (
+                    <div key={`${item.id}-${item.size}`} className="py-4 flex space-x-4">
+                      <div className="flex-shrink-0 relative w-16 h-16 rounded-md overflow-hidden">
                         {item.image ? (
-                          <img src={item.image} alt={item.name} className="w-full h-full object-cover" />
+                          <Image
+                            src={item.image}
+                            alt={item.name}
+                            fill
+                            className="object-cover"
+                          />
                         ) : (
-                          <FiShoppingBag className="text-gray-400" />
+                          <div className="w-full h-full bg-gray-100 flex items-center justify-center">
+                            <span className="text-xs text-gray-400">No image</span>
+                          </div>
                         )}
                       </div>
-                      <div className="flex-1">
-                        <p className="font-medium text-xs">
-                          {item.name}
-                        </p>
-                        <p className="text-xs text-gray-600">
-                          Size: {item.size}, Qty: {item.quantity}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-medium text-sm">₹{(item.price * item.quantity).toFixed(2)}</p>
+                      <div className="flex-1 flex flex-col justify-between">
+                        <div>
+                          <h3 className="text-sm font-medium text-gray-900">{item.name}</h3>
+                          <p className="mt-1 text-sm text-gray-500">Size: {item.size}</p>
+                        </div>
+                        <div className="flex justify-between text-sm font-medium">
+                          <p className="text-gray-500">Qty {item.quantity}</p>
+                          <p className="text-gray-900">₹{item.price * item.quantity}</p>
+                        </div>
                       </div>
                     </div>
                   ))}
                 </div>
                 
-                <div className="border-t mt-4 pt-4 space-y-2">
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Subtotal</span>
-                    <span>₹{subtotal.toFixed(2)}</span>
+                <div className="border-t border-gray-200 pt-4 mt-4">
+                  <div className="flex justify-between text-base font-medium text-gray-900">
+                    <p>Subtotal</p>
+                    <p>₹{total}</p>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Shipping</span>
-                    <span>Free</span>
+                  
+                  <div className="flex justify-between text-sm text-gray-500 mt-1">
+                    <p>Shipping</p>
+                    <p>Free</p>
                   </div>
-                  <div className="flex justify-between font-medium text-lg pt-2 border-t">
-                    <span>Total</span>
-                    <span>₹{total.toFixed(2)}</span>
+                  
+                  <div className="flex justify-between text-base font-medium text-gray-900 mt-4">
+                    <p>Total</p>
+                    <p>₹{total}</p>
+                  </div>
+                </div>
+                
+                <div className="mt-6 bg-blue-50 border-l-4 border-blue-400 p-4">
+                  <div className="flex">
+                    <div className="flex-shrink-0">
+                      <FiAlertCircle className="h-5 w-5 text-blue-400" />
+                    </div>
+                    <div className="ml-3">
+                      <p className="text-sm text-blue-700">
+                        We currently only support Cash on Delivery as a payment method.
+                      </p>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -796,4 +244,6 @@ export default function Checkout() {
       </div>
     </>
   );
-} 
+};
+
+export default CheckoutPage; 

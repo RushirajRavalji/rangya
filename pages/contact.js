@@ -6,8 +6,8 @@ export default function Contact() {
   return (
     <div className="bg-gray-50 min-h-screen">
       <Head>
-        <title>Contact Us | Ranga</title>
-        <meta name="description" content="Get in touch with Ranga - We'd love to hear from you!" />
+        <title>Contact Us | Rangya</title>
+        <meta name="description" content="Get in touch with Rangya - We'd love to hear from you!" />
       </Head>
 
       <div className="container mx-auto px-4 py-12">

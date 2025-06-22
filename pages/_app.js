@@ -5,17 +5,45 @@ import { AuthProvider } from '../contexts/AuthContext';
 import { CartProvider } from '../contexts/CartContext';
 import { NotificationProvider } from '../contexts/NotificationContext';
 import { useRouter } from 'next/router';
+import Head from 'next/head';
+import { onAuthStateChanged } from 'firebase/auth';
+import { SessionProvider } from 'next-auth/react';
+import analytics from '../utils/analytics';
 
-function MyApp({ Component, pageProps }) {
+function MyApp({ Component, pageProps: { session, ...pageProps } }) {
+  const router = useRouter();
   const [isClient, setIsClient] = useState(false);
   const [loading, setLoading] = useState(true);
   const [firebaseReady, setFirebaseReady] = useState(false);
-  const router = useRouter();
 
   useEffect(() => {
-    // Set client-side rendering flag
     setIsClient(true);
-    
+  }, []);
+
+  useEffect(() => {
+    if (isClient) {
+      import('../utils/firebase').then(({ auth }) => {
+        if (auth) {
+          const unsubscribe = onAuthStateChanged(auth, (user) => {
+            // User is logged in
+            if (user) {
+              // Nothing to do here, AuthContext will handle the user
+            } 
+            // User is not logged in
+            else {
+              // Nothing to do here, AuthContext will handle the user
+            }
+          });
+          
+          return () => unsubscribe && typeof unsubscribe === 'function' && unsubscribe();
+        }
+      }).catch(err => {
+        console.error("Error importing firebase:", err);
+      });
+    }
+  }, [isClient]);
+
+  useEffect(() => {
     // Initialize Firebase services
     const initializeApp = async () => {
       try {
@@ -27,7 +55,7 @@ function MyApp({ Component, pageProps }) {
           console.log('Firebase app initialized successfully in _app.js');
           
           // Test Firebase auth initialization
-          const authTest = await firebase.checkFirebaseAuth();
+          const authTest = firebase.checkFirebaseAuth();
           console.log('Firebase auth test:', authTest.isInitialized ? 'Success' : 'Failed');
           
           if (!authTest.isInitialized) {
@@ -72,6 +100,29 @@ function MyApp({ Component, pageProps }) {
     };
   }, [router]);
 
+  // Initialize Google Analytics
+  useEffect(() => {
+    analytics.initGA();
+  }, []);
+  
+  // Track page views
+  useEffect(() => {
+    const handleRouteChange = (url) => {
+      analytics.pageview(url);
+    };
+    
+    // Track initial page load
+    handleRouteChange(router.asPath);
+    
+    // Track route changes
+    router.events.on('routeChangeComplete', handleRouteChange);
+    
+    // Cleanup
+    return () => {
+      router.events.off('routeChangeComplete', handleRouteChange);
+    };
+  }, [router.asPath, router.events]);
+
   // Show loading state during SSR
   if (!isClient) {
     return (
@@ -96,22 +147,27 @@ function MyApp({ Component, pageProps }) {
   // Check if the current page should use the layout
   const useLayout = !router.pathname.includes('/admin');
 
+  // Get page-specific layout or use default
+  const getLayout = Component.getLayout || ((page) => (
+    <Layout>{page}</Layout>
+  ));
+
   // Render the application with all providers
   // Important: AuthProvider must come before NotificationProvider since NotificationProvider depends on it
   return (
-    <AuthProvider>
-      <NotificationProvider>
-        <CartProvider>
-          {useLayout ? (
-            <Layout>
+    <SessionProvider session={session}>
+      <AuthProvider>
+        <NotificationProvider>
+          <CartProvider>
+            {useLayout ? (
+              getLayout(<Component {...pageProps} isClient={isClient} />)
+            ) : (
               <Component {...pageProps} />
-            </Layout>
-          ) : (
-            <Component {...pageProps} />
-          )}
-        </CartProvider>
-      </NotificationProvider>
-    </AuthProvider>
+            )}
+          </CartProvider>
+        </NotificationProvider>
+      </AuthProvider>
+    </SessionProvider>
   );
 }
 

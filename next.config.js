@@ -1,15 +1,21 @@
+const withBundleAnalyzer = require('@next/bundle-analyzer')({
+  enabled: process.env.ANALYZE === 'true',
+});
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
   swcMinify: true,
   images: {
-    domains: [
-      'via.placeholder.com',
-      'firebasestorage.googleapis.com',
-      'images.unsplash.com',
-      'plus.unsplash.com',
-      'lh3.googleusercontent.com'
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: '**',
+      },
     ],
+    // Optimize image quality and formats
+    formats: ['image/avif', 'image/webp'],
+    minimumCacheTTL: 60,
   },
   i18n: {
     locales: ['en'],
@@ -18,6 +24,12 @@ const nextConfig = {
   // Allow loading local files from outside the Next.js directory
   experimental: {
     externalDir: true,
+    optimizeCss: true, // Enable CSS optimization
+    optimizePackageImports: [
+      'react-icons',
+      'firebase',
+      'lodash',
+    ],
   },
   // Ensure environment variables are available
   env: {
@@ -31,6 +43,8 @@ const nextConfig = {
   },
   // Add security headers
   headers: async () => {
+    const strictCSP = process.env.ENABLE_STRICT_CSP === 'true';
+    
     return [
       {
         // Apply these headers to all routes
@@ -58,33 +72,70 @@ const nextConfig = {
           },
           {
             key: 'Referrer-Policy',
-            value: 'origin-when-cross-origin',
+            value: 'strict-origin-when-cross-origin',
+          },
+          {
+            key: 'Permissions-Policy',
+            value: 'camera=(), microphone=(), geolocation=(), interest-cohort=()',
           },
           {
             key: 'Content-Security-Policy',
-            value: `
-              default-src 'self';
-              script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.firebaseio.com https://*.googleapis.com https://accounts.google.com;
-              style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
-              img-src 'self' data: blob: https://*.googleapis.com https://*.gstatic.com https://*.firebasestorage.googleapis.com https://via.placeholder.com https://images.unsplash.com https://plus.unsplash.com;
-              font-src 'self' https://fonts.gstatic.com;
-              connect-src 'self' https://*.firebaseio.com https://*.googleapis.com wss://*.firebaseio.com https://*.firebasestorage.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com;
-              frame-src 'self' https://*.firebaseio.com https://*.googleapis.com https://accounts.google.com;
-              object-src 'none';
-              base-uri 'self';
-              form-action 'self';
-              frame-ancestors 'none';
-              block-all-mixed-content;
-              upgrade-insecure-requests;
-            `.replace(/\s+/g, ' ').trim(),
+            value: strictCSP 
+              ? `
+                default-src 'self';
+                script-src 'self' https://www.googletagmanager.com https://www.google-analytics.com https://apis.google.com https://*.firebaseapp.com https://*.googleapis.com https://accounts.google.com;
+                style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+                img-src 'self' data: blob: https://*.googleapis.com https://*.gstatic.com https://*.firebasestorage.googleapis.com https://via.placeholder.com https://images.unsplash.com https://plus.unsplash.com https://*.googleusercontent.com;
+                font-src 'self' https://fonts.gstatic.com;
+                connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://*.firebasestorage.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://*.cloudfunctions.net https://*.firebaseapp.com https://www.google-analytics.com;
+                frame-src 'self' https://*.firebaseio.com https://*.googleapis.com https://accounts.google.com;
+                object-src 'none';
+                base-uri 'self';
+                form-action 'self';
+                frame-ancestors 'none';
+                block-all-mixed-content;
+                upgrade-insecure-requests;
+              `.replace(/\s+/g, ' ').trim()
+              : `
+                default-src 'self';
+                script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.googletagmanager.com https://www.google-analytics.com https://apis.google.com https://*.firebaseapp.com https://*.googleapis.com https://accounts.google.com;
+                style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+                img-src 'self' data: blob: https://*.googleapis.com https://*.gstatic.com https://*.firebasestorage.googleapis.com https://via.placeholder.com https://images.unsplash.com https://plus.unsplash.com https://*.googleusercontent.com;
+                font-src 'self' https://fonts.gstatic.com;
+                connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://*.firebasestorage.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://*.cloudfunctions.net https://*.firebaseapp.com;
+                frame-src 'self' https://*.firebaseio.com https://*.googleapis.com https://accounts.google.com;
+                object-src 'none';
+                base-uri 'self';
+                form-action 'self';
+                frame-ancestors 'none';
+                block-all-mixed-content;
+                upgrade-insecure-requests;
+              `.replace(/\s+/g, ' ').trim(),
           },
         ],
       },
     ];
   },
+  // Optimize production builds
+  compiler: {
+    removeConsole: process.env.NODE_ENV === 'production' ? {
+      exclude: ['error', 'warn'],
+    } : false,
+  },
+  // Configure webpack
+  webpack: (config, { dev, isServer }) => {
+    // Only load what we need from moment
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      'moment': 'moment/min/moment.min.js',
+    };
+    
+    // Return the modified config
+    return config;
+  },
 };
 
-// Log environment variables during build (safe for debugging)
+// Only log environment variables during development
 if (process.env.NODE_ENV !== 'production') {
   console.log('Firebase environment variables status:');
   console.log(`API Key: ${process.env.NEXT_PUBLIC_FIREBASE_API_KEY ? '✓ Set' : '✗ Missing'}`);
@@ -92,4 +143,4 @@ if (process.env.NODE_ENV !== 'production') {
   console.log(`Project ID: ${process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ? '✓ Set' : '✗ Missing'}`);
 }
 
-module.exports = nextConfig; 
+module.exports = withBundleAnalyzer(nextConfig); 

@@ -6,14 +6,14 @@ export default function AboutUs() {
   const structuredData = {
     "@context": "https://schema.org",
     "@type": "AboutPage",
-    "name": "About Ranga",
-    "description": "Learn about Ranga - Premium denim clothing for men. Our story, values, and commitment to quality.",
+    "name": "About Rangya",
+    "description": "Learn about Rangya - Premium denim clothing for men. Our story, values, and commitment to quality.",
     "publisher": {
       "@type": "Organization",
-      "name": "Ranga – Style Me Apna Rang",
+      "name": "Rangya – Style Me Apna Rang",
       "logo": {
         "@type": "ImageObject",
-        "url": "https://ranga-denim.com/images/logo.png"
+        "url": "/images/logo/logo.png"
       }
     }
   };
@@ -21,13 +21,13 @@ export default function AboutUs() {
   return (
     <div className="bg-gray-50 min-h-screen">
       <SEO 
-        title="About Us | Ranga"
-        description="Learn about Ranga - Premium denim clothing for men. Our story, values, and commitment to quality."
-        canonical="https://ranga-denim.com/about"
+        title="About Us | Rangya"
+        description="Learn about Rangya - Premium denim clothing for men. Our story, values, and commitment to quality."
+        canonical="https://rangya.com/about"
         openGraph={{
-          title: "About Ranga | Premium Denim Brand",
-          description: "Learn about Ranga - Premium denim clothing for men. Our story, values, and commitment to quality.",
-          url: "https://ranga-denim.com/about",
+          title: "About Rangya | Premium Denim Brand",
+          description: "Learn about Rangya - Premium denim clothing for men. Our story, values, and commitment to quality.",
+          url: "https://rangya.com/about",
           type: "website"
         }}
         structuredData={structuredData}
@@ -35,13 +35,13 @@ export default function AboutUs() {
 
       <div className="container mx-auto px-4 py-12">
         <div className="max-w-4xl mx-auto">
-          <h1 className="text-3xl md:text-4xl font-bold mb-8 text-center">About Ranga</h1>
+          <h1 className="text-3xl md:text-4xl font-bold mb-8 text-center">About Rangya</h1>
           
           <div className="bg-white rounded-lg shadow-sm p-8 mb-12">
             <h2 className="text-2xl font-semibold mb-6">Our Story</h2>
             <p className="mb-6 text-gray-700">
-              Founded in 2020, Ranga was born out of a passion for quality denim and a desire to create clothing that combines 
-              traditional craftsmanship with modern design. Our name "Ranga" represents our commitment to helping you express 
+              Founded in 2020, Rangya was born out of a passion for quality denim and a desire to create clothing that combines 
+              traditional craftsmanship with modern design. Our name "Rangya" represents our commitment to helping you express 
               your unique style and personality through our carefully crafted denim products.
             </p>
             <p className="mb-6 text-gray-700">
@@ -111,14 +111,14 @@ export default function AboutUs() {
           <div className="bg-white rounded-lg shadow-sm p-8">
             <h2 className="text-2xl font-semibold mb-6">Our Promise</h2>
             <p className="text-gray-700">
-              At Ranga, we promise to deliver products that not only look good but feel good and last long. We stand behind 
+              At Rangya, we promise to deliver products that not only look good but feel good and last long. We stand behind 
               everything we make, offering a satisfaction guarantee on all our products. Our customer service team is always 
               ready to assist you with any questions or concerns.
             </p>
             
             <div className="mt-8 text-center">
               <p className="text-lg font-medium text-indigo-deep">
-                "Style Me Apna Rang" - Express your unique style with Ranga
+                "Style Me Apna Rang" - Express your unique style with Rangya
               </p>
             </div>
           </div>

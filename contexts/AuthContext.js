@@ -4,7 +4,12 @@ import {
   signInWithPopup, 
   signOut, 
   onAuthStateChanged,
-  browserPopupRedirectResolver
+  browserPopupRedirectResolver,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  sendPasswordResetEmail,
+  sendEmailVerification,
+  updateProfile
 } from 'firebase/auth';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../utils/firebase';
@@ -24,15 +29,216 @@ export function AuthProvider({ children }) {
   const [userRole, setUserRole] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [authInitialized, setAuthInitialized] = useState(false);
 
   // Check if Firebase is properly initialized
   useEffect(() => {
-    if (!auth) {
+    if (!auth || !auth.app) {
       console.error("Firebase Auth is not initialized");
       setError("Authentication service is not available. Please try again later.");
       setLoading(false);
+    } else {
+      setAuthInitialized(true);
     }
   }, []);
+
+  // Email/Password Registration
+  async function registerWithEmail(email, password, displayName) {
+    setError(null);
+    
+    if (!auth) {
+      const noAuthError = new Error("Authentication service is not available");
+      setError("Authentication service is not available. Please try again later.");
+      throw noAuthError;
+    }
+    
+    try {
+      // Create user with email and password
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
+      
+      // Update profile with display name
+      if (displayName) {
+        await updateProfile(user, { displayName });
+      }
+      
+      // Send email verification
+      await sendEmailVerification(user);
+      
+      // Store authentication token in cookie
+      const token = await user.getIdToken();
+      Cookies.set('firebase-auth-token', token, { expires: 7 }); // 7 days expiry
+      
+      // Generate and store JWT token
+      try {
+        const response = await fetch('/api/auth/generate-jwt', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          if (data.token) {
+            Cookies.set('jwt-token', data.token, { expires: 7 }); // 7 days expiry
+          }
+        }
+      } catch (jwtError) {
+        console.error("Error generating JWT token:", jwtError);
+        // Continue anyway - authentication succeeded but JWT generation failed
+      }
+      
+      if (!db) {
+        console.warn("Firestore not initialized, skipping user data save");
+        return user;
+      }
+      
+      try {
+        // Save user data to Firestore
+        await setDoc(doc(db, 'users', user.uid), {
+          uid: user.uid,
+          email: user.email,
+          displayName: displayName || '',
+          emailVerified: false,
+          role: 'customer',
+          createdAt: serverTimestamp(),
+          lastLogin: serverTimestamp()
+        });
+      } catch (firestoreError) {
+        console.error("Error saving user data to Firestore:", firestoreError);
+        // Continue anyway - authentication succeeded but Firestore save failed
+      }
+      
+      return user;
+    } catch (error) {
+      console.error("Registration error:", error);
+      
+      // Set user-friendly error message
+      if (error.code === 'auth/email-already-in-use') {
+        setError('This email address is already in use. Please use a different email or try logging in.');
+      } else if (error.code === 'auth/invalid-email') {
+        setError('Invalid email address format. Please check and try again.');
+      } else if (error.code === 'auth/weak-password') {
+        setError('Password is too weak. Please choose a stronger password.');
+      } else {
+        setError(`Registration failed: ${error.message || 'Unknown error'}`);
+      }
+      
+      throw error;
+    }
+  }
+
+  // Email/Password Login
+  async function loginWithEmail(email, password) {
+    setError(null);
+    
+    if (!auth) {
+      const noAuthError = new Error("Authentication service is not available");
+      setError("Authentication service is not available. Please try again later.");
+      throw noAuthError;
+    }
+    
+    try {
+      // Sign in with email and password
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
+      
+      // Store authentication token in cookie
+      const token = await user.getIdToken();
+      Cookies.set('firebase-auth-token', token, { expires: 7 }); // 7 days expiry
+      
+      // Generate and store JWT token
+      try {
+        const response = await fetch('/api/auth/generate-jwt', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          if (data.token) {
+            Cookies.set('jwt-token', data.token, { expires: 7 }); // 7 days expiry
+          }
+        }
+      } catch (jwtError) {
+        console.error("Error generating JWT token:", jwtError);
+        // Continue anyway - authentication succeeded but JWT generation failed
+      }
+      
+      if (!db) {
+        console.warn("Firestore not initialized, skipping user data update");
+        return user;
+      }
+      
+      try {
+        // Update last login time in Firestore
+        const userRef = doc(db, 'users', user.uid);
+        await setDoc(userRef, {
+          lastLogin: serverTimestamp()
+        }, { merge: true });
+      } catch (firestoreError) {
+        console.error("Error updating user data in Firestore:", firestoreError);
+        // Continue anyway - authentication succeeded but Firestore update failed
+      }
+      
+      return user;
+    } catch (error) {
+      console.error("Email login error:", error);
+      
+      // Set user-friendly error message
+      if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
+        setError('Invalid email or password. Please try again.');
+      } else if (error.code === 'auth/invalid-email') {
+        setError('Invalid email address. Please check and try again.');
+      } else if (error.code === 'auth/user-disabled') {
+        setError('This account has been disabled. Please contact support.');
+      } else if (error.code === 'auth/too-many-requests') {
+        setError('Too many failed login attempts. Please try again later or reset your password.');
+      } else if (error.code === 'auth/invalid-credential') {
+        setError('Invalid login credentials. Please check your email and password and try again.');
+      } else if (error.code === 'auth/network-request-failed') {
+        setError('Network error. Please check your internet connection and try again.');
+      } else {
+        setError(`Login failed: ${error.message || 'Unknown error'}`);
+      }
+      
+      throw error;
+    }
+  }
+
+  // Reset Password
+  async function resetPassword(email) {
+    setError(null);
+    
+    if (!auth) {
+      const noAuthError = new Error("Authentication service is not available");
+      setError("Authentication service is not available. Please try again later.");
+      throw noAuthError;
+    }
+    
+    try {
+      await sendPasswordResetEmail(auth, email);
+      return true;
+    } catch (error) {
+      console.error("Password reset error:", error);
+      
+      // Set user-friendly error message
+      if (error.code === 'auth/user-not-found') {
+        setError('No account found with this email address.');
+      } else if (error.code === 'auth/invalid-email') {
+        setError('Invalid email address. Please check and try again.');
+      } else {
+        setError(`Password reset failed: ${error.message || 'Unknown error'}`);
+      }
+      
+      throw error;
+    }
+  }
 
   // Google Sign-in function
   async function signInWithGoogle() {
@@ -53,12 +259,19 @@ export function AuthProvider({ children }) {
       provider.addScope('profile');
       provider.addScope('email');
       
-      // Set custom parameters
+      // Set custom parameters - use 'select_account' to force Google to show account selection dialog
       provider.setCustomParameters({
         prompt: 'select_account'
       });
       
       console.log("Starting Google sign-in popup...");
+      
+      // Try to make sure popup works by checking for popup blockers
+      const popupBlocked = window.innerWidth <= 0 || window.innerHeight <= 0;
+      if (popupBlocked) {
+        console.error("Popup might be blocked by browser settings");
+        throw new Error("Popup blocked by browser. Please allow popups for this site.");
+      }
       
       // Sign in with popup and explicitly specify resolver
       const result = await signInWithPopup(auth, provider, browserPopupRedirectResolver);
@@ -70,69 +283,97 @@ export function AuthProvider({ children }) {
       const token = await user.getIdToken();
       Cookies.set('firebase-auth-token', token, { expires: 7 }); // 7 days expiry
       
+      // Generate and store JWT token
+      try {
+        const response = await fetch('/api/auth/generate-jwt', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          if (data.token) {
+            Cookies.set('jwt-token', data.token, { expires: 7 }); // 7 days expiry
+          }
+        }
+      } catch (jwtError) {
+        console.error("Error generating JWT token:", jwtError);
+        // Continue anyway - authentication succeeded but JWT generation failed
+      }
+      
       if (!db) {
         console.warn("Firestore not initialized, skipping user data save");
         return user;
       }
       
       try {
-        // Save user to Firestore if they don't exist
+        // Check if user exists in Firestore
         const userRef = doc(db, 'users', user.uid);
-        const userSnap = await getDoc(userRef);
+        const userDoc = await getDoc(userRef);
         
-        if (!userSnap.exists()) {
+        if (userDoc.exists()) {
+          // Update existing user
+          await setDoc(userRef, {
+            lastLogin: serverTimestamp(),
+            displayName: user.displayName || userDoc.data().displayName || '',
+            photoURL: user.photoURL || userDoc.data().photoURL || '',
+            email: user.email,
+            emailVerified: user.emailVerified
+          }, { merge: true });
+        } else {
           // Create new user document
           await setDoc(userRef, {
-            displayName: user.displayName,
+            uid: user.uid,
             email: user.email,
-            photoURL: user.photoURL,
+            displayName: user.displayName || '',
+            photoURL: user.photoURL || '',
+            emailVerified: user.emailVerified,
             role: 'customer',
             createdAt: serverTimestamp(),
             lastLogin: serverTimestamp()
           });
-          console.log("New user created in Firestore");
-        } else {
-          // Update last login time
-          await setDoc(userRef, {
-            lastLogin: serverTimestamp()
-          }, { merge: true });
-          console.log("User login time updated in Firestore");
         }
       } catch (firestoreError) {
         console.error("Error saving user data to Firestore:", firestoreError);
-        // Continue with authentication even if Firestore update fails
+        // Continue anyway - authentication succeeded but Firestore save failed
       }
       
       return user;
     } catch (error) {
-      console.error("Google sign-in error:", error);
+      console.error("Google sign-in error:", error.code, error.message);
       
       // Set user-friendly error message
       if (error.code === 'auth/popup-closed-by-user') {
         setError('Sign-in was cancelled. Please try again.');
       } else if (error.code === 'auth/popup-blocked') {
-        setError('Sign-in popup was blocked. Please allow popups for this site.');
-      } else if (error.code === 'auth/cancelled-popup-request') {
-        setError('Multiple popup requests were triggered. Please try again.');
-      } else if (error.code === 'auth/internal-error') {
-        setError('Authentication service encountered an internal error. Please try again later.');
+        setError('Sign-in popup was blocked. Please allow popups for this site and try again.');
+      } else if (error.code === 'auth/account-exists-with-different-credential') {
+        setError('An account already exists with the same email address but different sign-in credentials. Please sign in using the original method.');
+      } else if (error.code === 'auth/unauthorized-domain') {
+        setError('This domain is not authorized for OAuth operations. Please contact support.');
+      } else if (error.code === 'auth/operation-not-allowed') {
+        setError('Google sign-in is not enabled. Please contact support.');
       } else if (error.code === 'auth/network-request-failed') {
         setError('Network error. Please check your internet connection and try again.');
-      } else if (error.code === 'auth/operation-not-allowed') {
-        setError('Google authentication is not enabled for this application.');
-      } else if (error.code === 'auth/unauthorized-domain') {
-        setError('This domain is not authorized for OAuth operations.');
-        console.error("Unauthorized domain. Current domain:", window.location.hostname);
+      } else if (error.code === 'auth/internal-error') {
+        setError('Internal authentication error. Please try again or use a different sign-in method.');
+      } else if (error.code === 'auth/cancelled-popup-request') {
+        setError('Multiple popup requests detected. Please try again.');
+      } else if (error.code === 'auth/web-storage-unsupported') {
+        setError('This browser does not support web storage. Please use a different browser.');
       } else {
-        setError(`Authentication failed: ${error.message || 'Unknown error'}`);
+        setError(`Google sign-in failed: ${error.message || 'Unknown error'}`);
       }
       
       throw error;
     }
   }
 
-  // Sign out function
-  async function logOut() {
+  // Log out
+  async function logout() {
     setError(null);
     
     if (!auth) {
@@ -142,12 +383,18 @@ export function AuthProvider({ children }) {
     }
     
     try {
-      // Remove auth token cookie
-      Cookies.remove('firebase-auth-token');
       await signOut(auth);
+      
+      // Clear cookies
+      Cookies.remove('firebase-auth-token');
+      Cookies.remove('jwt-token');
+      
+      // Clear user state
+      setCurrentUser(null);
+      setUserRole(null);
     } catch (error) {
-      console.error("Sign out error:", error);
-      setError('Failed to sign out. Please try again.');
+      console.error("Logout error:", error);
+      setError(`Logout failed: ${error.message || 'Unknown error'}`);
       throw error;
     }
   }
@@ -155,64 +402,103 @@ export function AuthProvider({ children }) {
   // Get user role from Firestore
   async function getUserRole(uid) {
     if (!db) {
-      console.error("Firestore not initialized");
-      return 'customer';
+      console.warn("Firestore not initialized, cannot get user role");
+      return null;
     }
     
     try {
-      const userDoc = await getDoc(doc(db, 'users', uid));
+      const userRef = doc(db, 'users', uid);
+      const userDoc = await getDoc(userRef);
       
       if (userDoc.exists()) {
-        return userDoc.data().role || 'customer';
+        const userData = userDoc.data();
+        setUserRole(userData.role || 'customer');
+        return userData.role || 'customer';
+      } else {
+        console.warn("User document not found in Firestore");
+        setUserRole('customer');
+        return 'customer';
       }
-      
-      return 'customer'; // Default role
     } catch (error) {
-      console.error('Error getting user role:', error);
+      console.error("Error getting user role:", error);
+      setUserRole('customer');
       return 'customer';
     }
   }
 
-  // Set up auth state listener
+  // Listen for auth state changes
   useEffect(() => {
-    if (!auth) {
-      console.error("Cannot set up auth state listener: Auth not initialized");
+    // If auth is not initialized or doesn't have the proper methods, don't try to listen
+    if (!auth || !auth.app || typeof auth.onAuthStateChanged !== 'function') {
+      console.warn("Firebase Auth not properly initialized, skipping auth state listener");
       setLoading(false);
-      return () => {};
+      return;
     }
     
-    console.log("Setting up auth state listener");
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      console.log("Auth state changed:", user ? `User: ${user.uid}` : "No user");
-      setCurrentUser(user);
-      
-      if (user) {
+    let unsubscribe;
+    try {
+      // Use the auth object's method directly
+      unsubscribe = auth.onAuthStateChanged(async (user) => {
         try {
-          // Update the auth token cookie when auth state changes
-          const token = await user.getIdToken();
-          Cookies.set('firebase-auth-token', token, { expires: 7 }); // 7 days expiry
+          setCurrentUser(user);
           
-          const role = await getUserRole(user.uid);
-          setUserRole(role);
+          if (user) {
+            // Get user role from Firestore
+            await getUserRole(user.uid);
+            
+            // Store authentication token in cookie
+            try {
+              const token = await user.getIdToken();
+              Cookies.set('firebase-auth-token', token, { expires: 7 }); // 7 days expiry
+              
+              // Generate and store JWT token
+              const response = await fetch('/api/auth/generate-jwt', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${token}`
+                }
+              });
+              
+              if (response.ok) {
+                const data = await response.json();
+                if (data.token) {
+                  Cookies.set('jwt-token', data.token, { expires: 7 }); // 7 days expiry
+                }
+              }
+            } catch (tokenError) {
+              console.error("Error setting auth token cookie:", tokenError);
+            }
+          } else {
+            // Clear role and token when logged out
+            setUserRole(null);
+            Cookies.remove('firebase-auth-token');
+            Cookies.remove('jwt-token');
+          }
         } catch (error) {
-          console.error("Error getting user role:", error);
-          setUserRole('customer');
+          console.error("Auth state change error:", error);
+          setError("Error updating authentication state. Please refresh the page.");
+        } finally {
+          setLoading(false);
         }
-      } else {
-        // Remove auth token cookie when user logs out
-        Cookies.remove('firebase-auth-token');
-        setUserRole(null);
-      }
-      
+      });
+    } catch (error) {
+      console.error("Failed to set up auth state listener:", error);
+      setError("Failed to initialize authentication. Please refresh the page.");
       setLoading(false);
-    }, (error) => {
-      console.error("Auth state change error:", error);
-      setError("Authentication service encountered an error. Please refresh the page.");
-      setLoading(false);
-    });
+    }
     
-    return unsubscribe;
-  }, []);
+    // Cleanup subscription on unmount
+    return () => {
+      if (unsubscribe && typeof unsubscribe === 'function') {
+        try {
+          unsubscribe();
+        } catch (error) {
+          console.error("Error unsubscribing from auth state:", error);
+        }
+      }
+    };
+  }, [authInitialized]); // Only re-run when authInitialized changes
 
   // Context value
   const value = {
@@ -220,14 +506,21 @@ export function AuthProvider({ children }) {
     userRole,
     loading,
     error,
+    registerWithEmail,
+    loginWithEmail,
     signInWithGoogle,
-    logOut,
-    getUserRole
+    resetPassword,
+    logout,
+    isAdmin: userRole === 'admin'
   };
 
   return (
     <AuthContext.Provider value={value}>
-      {!loading && children}
+      {!loading || !authInitialized ? children : (
+        <div className="flex items-center justify-center min-h-screen">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div>
+        </div>
+      )}
     </AuthContext.Provider>
   );
 } 

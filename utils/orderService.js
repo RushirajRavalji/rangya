@@ -12,67 +12,216 @@ import {
   serverTimestamp,
   startAfter,
   Timestamp,
-  writeBatch
+  writeBatch,
+  runTransaction,
+  deleteDoc,
+  increment
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from './firebase';
 import { updateProductStock } from './productService';
 
 // Collection references as functions to avoid initialization issues
-const getOrdersRef = () => collection(db, 'orders');
+const getOrdersRef = () => {
+  if (!db) {
+    throw new Error("Firestore database is not initialized");
+  }
+  return collection(db, 'orders');
+};
 const getAdminNotificationsRef = () => collection(db, 'adminNotifications');
 
 /**
- * Create a new order
+ * Create a new order with improved stock management for concurrent orders
  * @param {Object} orderData - Order data
+ * @param {string} userId - User ID
  * @returns {Promise<Object>} - Created order
  */
-export async function createOrder(orderData) {
-  try {
-    if (!orderData.userId) {
-      throw new Error('userId is required to create an order');
-    }
-    
-    const ordersRef = getOrdersRef();
-    // Add timestamps
-    const dataWithTimestamps = {
-      ...orderData,
-      status: orderData.status || 'pending',
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp()
-    };
-    
-    const docRef = await addDoc(ordersRef, dataWithTimestamps);
-    const orderId = docRef.id;
-    
-    // Update product stock
-    await updateOrderStock(orderData.items);
-    
-    // Create admin notification
-    try {
-      const notificationsRef = getAdminNotificationsRef();
-      await addDoc(notificationsRef, {
-        title: 'New Order Received',
-        message: `Order #${orderId.slice(0, 8)} for ₹${orderData.total.toFixed(2)} has been placed by ${orderData.customer?.name || 'a customer'}.`,
-        type: 'info',
-        link: `/admin/orders/${orderId}`,
-        read: false,
-        createdAt: serverTimestamp()
-      });
-    } catch (notifError) {
-      console.error('Error creating admin notification:', notifError);
-      // Continue with order creation even if notification fails
-    }
-    
-    return {
-      id: orderId,
-      ...dataWithTimestamps
-    };
-  } catch (error) {
-    console.error('Error creating order:', error);
-    throw error;
+export const createOrder = async (orderData, userId) => {
+  // Validate order data
+  if (!orderData || !orderData.items || !orderData.items.length) {
+    throw new Error('Invalid order data');
   }
-}
+
+  // Validate user ID
+  if (!userId) {
+    throw new Error('User ID is required');
+  }
+
+  // Maximum number of retries for transaction
+  const MAX_RETRIES = 3;
+  let retryCount = 0;
+  let lastError = null;
+
+  while (retryCount < MAX_RETRIES) {
+    try {
+      // Use a transaction to ensure stock consistency
+      return await runTransaction(db, async (transaction) => {
+        // Check stock availability for all items
+        const stockUpdates = {};
+        const productRefs = {};
+        const unavailableItems = [];
+        const lowStockItems = [];
+
+        // First, check all products stock
+        for (const item of orderData.items) {
+          const productRef = doc(db, 'products', item.id);
+          productRefs[item.id] = productRef;
+          
+          const productSnapshot = await transaction.get(productRef);
+          
+          if (!productSnapshot.exists()) {
+            unavailableItems.push({
+              id: item.id,
+              name: item.name,
+              reason: 'Product not found'
+            });
+            continue;
+          }
+          
+          const productData = productSnapshot.data();
+          
+          // Check if product has stock tracking
+          if (!productData.stock) {
+            continue; // Skip stock check for products without stock tracking
+          }
+          
+          // Check if requested size exists and has enough stock
+          const sizeStock = productData.stock[item.size];
+          
+          if (sizeStock === undefined) {
+            unavailableItems.push({
+              id: item.id,
+              name: item.name,
+              size: item.size,
+              reason: 'Size not available'
+            });
+            continue;
+          }
+          
+          if (sizeStock < item.quantity) {
+            unavailableItems.push({
+              id: item.id,
+              name: item.name,
+              size: item.size,
+              requested: item.quantity,
+              available: sizeStock,
+              reason: 'Insufficient stock'
+            });
+            continue;
+          }
+
+          // Check for low stock (less than 3 items remaining after purchase)
+          if (sizeStock - item.quantity < 3) {
+            lowStockItems.push({
+              id: item.id,
+              name: item.name,
+              size: item.size,
+              remaining: sizeStock - item.quantity
+            });
+          }
+          
+          // Track stock updates
+          if (!stockUpdates[item.id]) {
+            stockUpdates[item.id] = { ...productData.stock };
+          }
+          
+          stockUpdates[item.id][item.size] = sizeStock - item.quantity;
+        }
+        
+        // If any items are unavailable, abort the transaction
+        if (unavailableItems.length > 0) {
+          throw new Error('Some items are not available', { cause: { unavailableItems } });
+        }
+        
+        // Generate order number with timestamp and random part to ensure uniqueness
+        const timestamp = Date.now();
+        const randomPart = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+        const orderNumber = `ORD-${timestamp}-${randomPart}`;
+        
+        // Create the order document
+        const orderRef = doc(collection(db, 'orders'));
+        
+        const newOrder = {
+          ...orderData,
+          id: orderRef.id,
+          orderNumber,
+          userId,
+          status: 'pending',
+          paymentStatus: 'pending',
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+          processedAt: serverTimestamp() // Track when the order was processed
+        };
+        
+        transaction.set(orderRef, newOrder);
+        
+        // Update stock for all products
+        for (const [productId, stockData] of Object.entries(stockUpdates)) {
+          transaction.update(productRefs[productId], { 
+            stock: stockData,
+            updatedAt: serverTimestamp() // Track when stock was last updated
+          });
+          
+          // Also update the totalSold counter
+          const item = orderData.items.find(i => i.id === productId);
+          if (item) {
+            transaction.update(productRefs[productId], { 
+              totalSold: increment(item.quantity)
+            });
+          }
+        }
+
+        // Create notification for low stock items
+        if (lowStockItems.length > 0) {
+          const notificationRef = doc(collection(db, 'adminNotifications'));
+          transaction.set(notificationRef, {
+            id: notificationRef.id,
+            type: 'low_stock',
+            title: 'Low Stock Alert',
+            message: `${lowStockItems.length} item(s) are running low on stock after order ${orderNumber}`,
+            items: lowStockItems,
+            createdAt: serverTimestamp(),
+            read: false
+          });
+        }
+        
+        // Return the created order
+        return {
+          ...newOrder,
+          id: orderRef.id,
+          lowStockItems: lowStockItems.length > 0 ? lowStockItems : undefined
+        };
+      });
+    } catch (error) {
+      lastError = error;
+      
+      // Check if error is due to a concurrent modification
+      if (error.code === 'failed-precondition' || error.code === 'aborted') {
+        retryCount++;
+        console.log(`Retrying transaction due to concurrent modification (attempt ${retryCount}/${MAX_RETRIES})`);
+        // Wait a bit before retrying (exponential backoff)
+        await new Promise(resolve => setTimeout(resolve, Math.pow(2, retryCount) * 100));
+        continue;
+      }
+      
+      // For other errors, check if it has unavailable items
+      if (error.cause?.unavailableItems) {
+        throw {
+          message: 'Some items are not available',
+          unavailableItems: error.cause.unavailableItems,
+          code: 'STOCK_ERROR'
+        };
+      }
+      
+      // Rethrow other errors
+      throw error;
+    }
+  }
+  
+  // If we've exhausted retries
+  console.error(`Failed to create order after ${MAX_RETRIES} attempts:`, lastError);
+  throw new Error('Failed to create order due to concurrent modifications. Please try again.');
+};
 
 /**
  * Get orders with filtering, sorting, and pagination
@@ -127,74 +276,64 @@ export async function getOrders(options = {}) {
 }
 
 /**
- * Get an order by ID
+ * Get order by ID
  * @param {string} orderId - Order ID
- * @returns {Promise<Object|null>} - Order data or null if not found
+ * @returns {Promise<Object>} - Order data
  */
-export async function getOrderById(orderId) {
+export const getOrderById = async (orderId) => {
   try {
-    const docRef = doc(db, 'orders', orderId);
-    const docSnap = await getDoc(docRef);
+    const orderRef = doc(db, 'orders', orderId);
+    const orderSnapshot = await getDoc(orderRef);
     
-    if (docSnap.exists()) {
-      return {
-        id: docSnap.id,
-        ...docSnap.data()
-      };
-    } else {
-      return null;
+    if (!orderSnapshot.exists()) {
+      throw new Error('Order not found');
     }
+    
+    return {
+      id: orderSnapshot.id,
+      ...orderSnapshot.data()
+    };
   } catch (error) {
-    console.error('Error getting order by ID:', error);
+    console.error('Error getting order:', error);
     throw error;
   }
-}
+};
 
 /**
- * Get orders for a specific user
+ * Get orders for a user
  * @param {string} userId - User ID
- * @returns {Promise<Array>} - Array of user orders
+ * @param {Object} options - Query options
+ * @returns {Promise<Array>} - List of orders
  */
-export async function getUserOrders(userId) {
+export const getUserOrders = async (userId, options = {}) => {
   try {
-    if (!userId) {
-      console.error('getUserOrders called without a userId');
-      return [];
-    }
+    const { status, limit: queryLimit = 10, startAfter } = options;
     
-    const ordersRef = getOrdersRef();
-    const q = query(
-      ordersRef,
+    let ordersQuery = query(
+      collection(db, 'orders'),
       where('userId', '==', userId),
       orderBy('createdAt', 'desc')
     );
     
-    console.log(`Fetching orders for user: ${userId}`);
-    const querySnapshot = await getDocs(q);
-    console.log(`Found ${querySnapshot.size} orders for user: ${userId}`);
+    if (status) {
+      ordersQuery = query(ordersQuery, where('status', '==', status));
+    }
     
-    const orders = [];
-    querySnapshot.forEach((doc) => {
-      const data = doc.data();
-      // Ensure we have all required fields
-      if (data) {
-        orders.push({
-          id: doc.id,
-          ...data,
-          // Ensure these fields exist with defaults if missing
-          status: data.status || 'pending',
-          items: data.items || [],
-          total: data.total || 0
-        });
-      }
-    });
+    if (queryLimit) {
+      ordersQuery = query(ordersQuery, limit(queryLimit));
+    }
     
-    return orders;
+    const ordersSnapshot = await getDocs(ordersQuery);
+    
+    return ordersSnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
   } catch (error) {
     console.error('Error getting user orders:', error);
     throw error;
   }
-}
+};
 
 /**
  * Get all orders with optional filtering and pagination
@@ -255,99 +394,169 @@ export async function getAllOrders(options = {}) {
 }
 
 /**
- * Update an order
+ * Update order status
  * @param {string} orderId - Order ID
- * @param {Object} orderData - Updated order data
- * @returns {Promise<void>}
+ * @param {string} status - New status
+ * @param {Object} updateData - Additional data to update
+ * @returns {Promise<Object>} - Updated order
  */
-export async function updateOrder(orderId, orderData) {
-  try {
-    const orderRef = doc(db, 'orders', orderId);
-    
-    // Add updated timestamp
-    const dataWithTimestamp = {
-      ...orderData,
-      updatedAt: serverTimestamp()
-    };
-    
-    await updateDoc(orderRef, dataWithTimestamp);
-  } catch (error) {
-    console.error('Error updating order:', error);
-    throw error;
-  }
-}
-
-/**
- * Update an order's status
- * @param {string} orderId - Order ID
- * @param {string} status - New status ('pending', 'processing', 'shipped', 'delivered', 'cancelled')
- * @returns {Promise<void>}
- */
-export async function updateOrderStatus(orderId, status) {
+export const updateOrderStatus = async (orderId, status, updateData = {}) => {
   try {
     const orderRef = doc(db, 'orders', orderId);
     
     await updateDoc(orderRef, {
       status,
-      updatedAt: serverTimestamp()
+      updatedAt: serverTimestamp(),
+      ...updateData
     });
+    
+    return getOrderById(orderId);
   } catch (error) {
     console.error('Error updating order status:', error);
     throw error;
   }
-}
+};
 
 /**
- * Cancel an order
+ * Cancel order and restore stock
  * @param {string} orderId - Order ID
- * @param {string} cancelReason - Reason for cancellation
- * @returns {Promise<void>}
+ * @param {string} reason - Cancellation reason
+ * @returns {Promise<Object>} - Cancelled order
  */
-export async function cancelOrder(orderId, cancelReason) {
+export const cancelOrder = async (orderId, reason) => {
   try {
-    const orderRef = doc(db, 'orders', orderId);
-    
-    await updateDoc(orderRef, {
-      status: 'cancelled',
-      cancelReason,
-      cancelledAt: serverTimestamp(),
-      updatedAt: serverTimestamp()
+    return await runTransaction(db, async (transaction) => {
+      // Get the order
+      const orderRef = doc(db, 'orders', orderId);
+      const orderSnapshot = await transaction.get(orderRef);
+      
+      if (!orderSnapshot.exists()) {
+        throw new Error('Order not found');
+      }
+      
+      const orderData = orderSnapshot.data();
+      
+      // Check if order can be cancelled
+      if (['delivered', 'cancelled', 'refunded'].includes(orderData.status)) {
+        throw new Error(`Cannot cancel order with status: ${orderData.status}`);
+      }
+      
+      // Update order status
+      transaction.update(orderRef, {
+        status: 'cancelled',
+        cancelledAt: serverTimestamp(),
+        cancellationReason: reason || 'Cancelled by user',
+        updatedAt: serverTimestamp()
+      });
+      
+      // Restore stock for all items
+      for (const item of orderData.items) {
+        const productRef = doc(db, 'products', item.id);
+        const productSnapshot = await transaction.get(productRef);
+        
+        if (productSnapshot.exists()) {
+          const productData = productSnapshot.data();
+          
+          // Only update stock if product has stock tracking
+          if (productData.stock && productData.stock[item.size] !== undefined) {
+            const updatedStock = { ...productData.stock };
+            updatedStock[item.size] = (updatedStock[item.size] || 0) + item.quantity;
+            
+            transaction.update(productRef, { 
+              stock: updatedStock,
+              totalSold: increment(-item.quantity)
+            });
+          }
+        }
+      }
+      
+      return {
+        ...orderData,
+        id: orderRef.id,
+        status: 'cancelled'
+      };
     });
   } catch (error) {
     console.error('Error cancelling order:', error);
     throw error;
   }
-}
+};
 
 /**
- * Update product stock based on order items
- * @param {Array} items - Order items
- * @returns {Promise<void>}
+ * Process refund for an order
+ * @param {string} orderId - Order ID
+ * @param {string} reason - Refund reason
+ * @param {Array} items - Items to refund (optional, if partial refund)
+ * @returns {Promise<Object>} - Refunded order
  */
-async function updateOrderStock(items) {
+export const refundOrder = async (orderId, reason, items = []) => {
   try {
-    // Group items by product ID
-    const stockUpdates = {};
-    
-    items.forEach(item => {
-      if (!stockUpdates[item.id]) {
-        stockUpdates[item.id] = {};
+    return await runTransaction(db, async (transaction) => {
+      // Get the order
+      const orderRef = doc(db, 'orders', orderId);
+      const orderSnapshot = await transaction.get(orderRef);
+      
+      if (!orderSnapshot.exists()) {
+        throw new Error('Order not found');
       }
       
-      // Decrease stock by quantity (negative value)
-      stockUpdates[item.id][item.size] = -(item.quantity);
+      const orderData = orderSnapshot.data();
+      
+      // Check if order can be refunded
+      if (['cancelled', 'refunded'].includes(orderData.status)) {
+        throw new Error(`Cannot refund order with status: ${orderData.status}`);
+      }
+      
+      const isPartialRefund = items && items.length > 0;
+      
+      // Update order status
+      const updateData = {
+        status: isPartialRefund ? 'partially_refunded' : 'refunded',
+        refundedAt: serverTimestamp(),
+        refundReason: reason || 'Refunded by admin',
+        updatedAt: serverTimestamp()
+      };
+      
+      if (isPartialRefund) {
+        updateData.refundedItems = items;
+      }
+      
+      transaction.update(orderRef, updateData);
+      
+      // Restore stock for all items or selected items
+      const itemsToRefund = isPartialRefund ? items : orderData.items;
+      
+      for (const item of itemsToRefund) {
+        const productRef = doc(db, 'products', item.id);
+        const productSnapshot = await transaction.get(productRef);
+        
+        if (productSnapshot.exists()) {
+          const productData = productSnapshot.data();
+          
+          // Only update stock if product has stock tracking
+          if (productData.stock && productData.stock[item.size] !== undefined) {
+            const updatedStock = { ...productData.stock };
+            updatedStock[item.size] = (updatedStock[item.size] || 0) + item.quantity;
+            
+            transaction.update(productRef, { 
+              stock: updatedStock,
+              totalSold: increment(-item.quantity)
+            });
+          }
+        }
+      }
+      
+      return {
+        ...orderData,
+        id: orderRef.id,
+        status: isPartialRefund ? 'partially_refunded' : 'refunded'
+      };
     });
-    
-    // Update stock for each product
-    const updatePromises = Object.entries(stockUpdates).map(([productId, sizeUpdates]) => {
-      return updateProductStock(productId, sizeUpdates);
-    });
-    
-    await Promise.all(updatePromises);
   } catch (error) {
-    console.error('Error updating product stock:', error);
+    console.error('Error refunding order:', error);
+    throw error;
   }
-}
+};
 
 /**
  * Mark an order as paid and set up auto-deletion after 30 days from delivery
@@ -383,4 +592,15 @@ export function isEligibleForDeletion(order) {
     new Date(order.scheduledForDeletion);
     
   return new Date() >= deletionDate;
-} 
+}
+
+export default {
+  createOrder,
+  getOrderById,
+  getUserOrders,
+  updateOrderStatus,
+  cancelOrder,
+  refundOrder,
+  updateProductStock,
+  bulkUpdateStock: updateProductStock
+}; 

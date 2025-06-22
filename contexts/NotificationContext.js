@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { collection, onSnapshot, query, orderBy, where, limit, serverTimestamp, addDoc, doc, updateDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../utils/firebase';
 import { useAuth } from './AuthContext';
@@ -30,32 +30,50 @@ export function NotificationProvider({ children }) {
     setNotifications([]);
   }, [currentUser?.uid]);
 
-  // Show notification toast
-  const showNotification = (message, type = 'info', duration = 5000) => {
-    const id = Date.now();
-    const newNotification = {
-      id,
-      message,
-      type,
-      duration
-    };
+  // Generate a unique ID for each notification
+  const generateId = useCallback(() => {
+    return Math.random().toString(36).substring(2, 9);
+  }, []);
+  
+  // Show a notification
+  const showNotification = useCallback((message, type = 'info', duration = 5000) => {
+    const id = generateId();
     
-    setNotifications(prev => [newNotification, ...prev]);
-    
-    // Auto dismiss after duration
-    if (duration) {
-      setTimeout(() => {
-        dismissNotification(id);
-      }, duration);
-    }
+    setNotifications(prev => [
+      ...prev,
+      {
+        id,
+        message,
+        type, // 'info', 'success', 'warning', 'error'
+        duration
+      }
+    ]);
     
     return id;
-  };
+  }, [generateId]);
   
-  // Dismiss notification
-  const dismissNotification = (id) => {
+  // Hide a notification
+  const hideNotification = useCallback((id) => {
     setNotifications(prev => prev.filter(notification => notification.id !== id));
-  };
+  }, []);
+  
+  // Auto-hide notifications after their duration
+  useEffect(() => {
+    const timers = notifications.map(notification => {
+      // Don't auto-hide if duration is 0 or less
+      if (notification.duration <= 0) return null;
+      
+      return setTimeout(() => {
+        hideNotification(notification.id);
+      }, notification.duration);
+    });
+    
+    return () => {
+      timers.forEach(timer => {
+        if (timer) clearTimeout(timer);
+      });
+    };
+  }, [notifications, hideNotification]);
   
   // Create admin notification
   const createAdminNotification = async (title, message, type = 'info', link = null) => {
@@ -191,7 +209,7 @@ export function NotificationProvider({ children }) {
     unreadCount,
     adminUnreadCount,
     showNotification,
-    dismissNotification,
+    hideNotification,
     createAdminNotification,
     markAdminNotificationRead,
     markAllAdminNotificationsRead,
@@ -204,61 +222,34 @@ export function NotificationProvider({ children }) {
     <NotificationContext.Provider value={value}>
       {children}
       
-      {/* Notification Toast Container */}
-      <div className="fixed bottom-4 right-4 z-50 space-y-2">
-        {notifications.map(notification => (
-          <div 
-            key={notification.id}
-            className={`px-4 py-3 rounded-md shadow-lg flex items-center justify-between ${
-              notification.type === 'success' ? 'bg-green-500 text-white' :
-              notification.type === 'error' ? 'bg-red-500 text-white' :
-              notification.type === 'warning' ? 'bg-yellow-500 text-white' :
-              'bg-indigo-deep text-white'
-            } transition-opacity duration-300`}
+      {/* Notification component - Modified to be smaller and show only one notification */}
+      {notifications.length > 0 && (
+        <div className="fixed top-4 right-4 z-50 w-full max-w-xs">
+          {/* Only show the most recent notification */}
+          <div
+            key={notifications[0].id}
+            className={`p-3 rounded-lg shadow-lg flex items-start ${
+              notifications[0].type === 'success' ? 'bg-green-50 text-green-800 border-l-4 border-green-500' :
+              notifications[0].type === 'error' ? 'bg-red-50 text-red-800 border-l-4 border-red-500' :
+              notifications[0].type === 'warning' ? 'bg-yellow-50 text-yellow-800 border-l-4 border-yellow-500' :
+              'bg-blue-50 text-blue-800 border-l-4 border-blue-500'
+            }`}
           >
-            <span>{notification.message}</span>
-            <button 
-              onClick={() => dismissNotification(notification.id)}
-              className="ml-4 text-white hover:text-gray-200"
+            <div className="flex-1">
+              <p className="text-sm font-medium">{notifications[0].message}</p>
+            </div>
+            <button
+              onClick={() => hideNotification(notifications[0].id)}
+              className="ml-2 text-gray-400 hover:text-gray-600"
+              aria-label="Close notification"
             >
-              ×
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
             </button>
           </div>
-        ))}
-      </div>
-      
-      {/* Notification Toast Container */}
-      <div className="fixed top-4 right-4 z-50 space-y-2 w-80">
-        <AnimatePresence>
-          {notifications.map(notification => (
-            <motion.div
-              key={notification.id}
-              initial={{ opacity: 0, y: -20, scale: 0.9 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.9 }}
-              transition={{ duration: 0.2 }}
-              className={`rounded-md shadow-lg border-l-4 ${getColorScheme(notification.type)}`}
-            >
-              <div className="p-4 flex items-start">
-                <div className={`mr-3 flex-shrink-0 ${notification.type === 'success' ? 'text-green-500' : notification.type === 'error' ? 'text-red-500' : notification.type === 'warning' ? 'text-yellow-500' : 'text-blue-500'}`}>
-                  {getIcon(notification.type)}
-                </div>
-                <div className="flex-1 pt-0.5">
-                  <p className="text-sm font-medium">
-                    {notification.message}
-                  </p>
-                </div>
-                <button
-                  onClick={() => dismissNotification(notification.id)}
-                  className="ml-4 flex-shrink-0 text-gray-400 hover:text-gray-600 focus:outline-none"
-                >
-                  <FiX className="h-5 w-5" />
-                </button>
-              </div>
-            </motion.div>
-          ))}
-        </AnimatePresence>
-      </div>
+        </div>
+      )}
     </NotificationContext.Provider>
   );
 } 

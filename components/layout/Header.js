@@ -3,14 +3,17 @@ import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { FiMenu, FiX, FiShoppingCart, FiUser, FiLogIn, FiLogOut, FiShield, FiTag } from 'react-icons/fi';
 import { useAuth } from '../../contexts/AuthContext';
+import { useNotification } from '../../contexts/NotificationContext';
 
 export default function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const { currentUser, logout, userRole } = useAuth();
+  const { currentUser, logout, userRole, authError } = useAuth();
+  const { showNotification } = useNotification();
   const router = useRouter();
   const [cartCount, setCartCount] = useState(0);
   const [scrolled, setScrolled] = useState(false);
   const [showAccountDropdown, setShowAccountDropdown] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
 
   // Handle scroll effect
   useEffect(() => {
@@ -42,18 +45,34 @@ export default function Header() {
 
     // Listen for storage events (when cart is updated)
     window.addEventListener('storage', updateCartCount);
+    // Also listen for custom cart update events
+    window.addEventListener('cartUpdated', updateCartCount);
     
     return () => {
       window.removeEventListener('storage', updateCartCount);
+      window.removeEventListener('cartUpdated', updateCartCount);
     };
   }, []);
 
+  // Show auth errors as notifications
+  useEffect(() => {
+    if (authError) {
+      showNotification(authError, 'error');
+    }
+  }, [authError, showNotification]);
+
   const handleLogout = async () => {
     try {
+      setLoggingOut(true);
       await logout();
       router.push('/');
+      showNotification('You have been logged out successfully', 'success');
     } catch (error) {
       console.error('Logout failed', error);
+      showNotification('Logout failed. Please try again.', 'error');
+    } finally {
+      setLoggingOut(false);
+      setShowAccountDropdown(false);
     }
   };
 
@@ -64,10 +83,10 @@ export default function Header() {
   return (
     <header className={`sticky top-0 z-50 bg-white transition-all duration-300 ${scrolled ? 'shadow-md' : ''}`}>
       <div className="container mx-auto px-4">
-        <div className="flex justify-between items-center h-16">
+        <div className="flex justify-between items-center h-20">
           {/* Logo */}
-          <Link href="/" className="text-2xl font-bold text-indigo-deep">
-            Ranga
+          <Link href="/" className="flex items-center py-2">
+            <img src="/images/logo/logo.png" alt="Rangya" className="h-16 w-auto" />
           </Link>
 
           {/* Desktop Navigation */}
@@ -150,10 +169,11 @@ export default function Header() {
                     </Link>
                     <button
                       onClick={handleLogout}
-                      className="flex items-center w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                      disabled={loggingOut}
+                      className="flex items-center w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-50"
                     >
                       <FiLogOut className="mr-2" />
-                      Logout
+                      {loggingOut ? 'Logging out...' : 'Logout'}
                     </button>
                   </div>
                 )}
@@ -177,26 +197,52 @@ export default function Header() {
       {isMenuOpen && (
         <div className="md:hidden bg-white shadow-lg">
           <nav className="flex flex-col py-4">
-            <Link href="/" className="px-4 py-2 hover:bg-gray-100">
+            <Link href="/" className="px-4 py-2 hover:bg-gray-100" onClick={toggleMenu}>
               Home
             </Link>
-            <Link href="/products" className="px-4 py-2 hover:bg-gray-100">
+            <Link href="/products" className="px-4 py-2 hover:bg-gray-100" onClick={toggleMenu}>
               Products
             </Link>
-            <Link href="/sale" className="px-4 py-2 hover:bg-gray-100 flex items-center">
+            <Link href="/sale" className="px-4 py-2 hover:bg-gray-100 flex items-center" onClick={toggleMenu}>
               <FiTag className="mr-2" />
               Sale
             </Link>
-            <Link href="/about" className="px-4 py-2 hover:bg-gray-100">
+            <Link href="/about" className="px-4 py-2 hover:bg-gray-100" onClick={toggleMenu}>
               About Us
             </Link>
-            <Link href="/contact" className="px-4 py-2 hover:bg-gray-100">
+            <Link href="/contact" className="px-4 py-2 hover:bg-gray-100" onClick={toggleMenu}>
               Contact
             </Link>
             {currentUser && userRole === 'admin' && (
-              <Link href="/admin" className="flex items-center px-4 py-3 bg-indigo-deep/10 text-indigo-deep font-medium">
+              <Link href="/admin" className="flex items-center px-4 py-3 bg-indigo-deep/10 text-indigo-deep font-medium" onClick={toggleMenu}>
                 <FiShield className="mr-2" />
                 Admin Panel
+              </Link>
+            )}
+            {currentUser ? (
+              <>
+                <Link href="/account/orders" className="px-4 py-2 hover:bg-gray-100" onClick={toggleMenu}>
+                  My Orders
+                </Link>
+                <Link href="/account/wishlist" className="px-4 py-2 hover:bg-gray-100" onClick={toggleMenu}>
+                  Wishlist
+                </Link>
+                <button
+                  className="flex items-center w-full text-left px-4 py-2 text-red-600 hover:bg-red-50"
+                  onClick={() => {
+                    handleLogout();
+                    toggleMenu();
+                  }}
+                  disabled={loggingOut}
+                >
+                  <FiLogOut className="mr-2" />
+                  {loggingOut ? 'Logging out...' : 'Logout'}
+                </button>
+              </>
+            ) : (
+              <Link href="/login" className="flex items-center px-4 py-2 text-indigo-deep hover:bg-indigo-deep/10" onClick={toggleMenu}>
+                <FiLogIn className="mr-2" />
+                Login
               </Link>
             )}
           </nav>
