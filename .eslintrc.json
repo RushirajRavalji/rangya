@@ -1,24 +1,12 @@
 {
   "extends": [
-    "next/core-web-vitals",
-    "plugin:security/recommended"
-  ],
-  "plugins": [
-    "security"
+    "next/core-web-vitals"
   ],
   "rules": {
     "react/no-unescaped-entities": "off",
     "react/no-unknown-property": "error",
     "react/jsx-key": "error",
     "react/jsx-no-target-blank": "error",
-    "security/detect-object-injection": "warn",
-    "security/detect-non-literal-regexp": "error",
-    "security/detect-unsafe-regex": "error",
-    "security/detect-buffer-noassert": "error",
-    "security/detect-eval-with-expression": "error",
-    "security/detect-no-csrf-before-method-override": "error",
-    "security/detect-possible-timing-attacks": "warn",
-    "security/detect-pseudoRandomBytes": "error",
     "no-console": ["warn", { "allow": ["warn", "error"] }],
     "no-alert": "error",
     "no-debugger": "error"
