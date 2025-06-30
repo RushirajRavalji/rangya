@@ -207,7 +207,7 @@ export default function ProductDetail() {
   const breadcrumbItems = [
     { name: 'Home', url: 'https://ranga-denim.com/' },
     { name: 'Products', url: 'https://ranga-denim.com/products' },
-    { name: product.category, url: `https://ranga-denim.com/products?category=${encodeURIComponent(product.category)}` },
+    { name: 'Products', url: `https://ranga-denim.com/products?category=${encodeURIComponent(product.category)}` },
     { name: product.name_en, url: `https://ranga-denim.com/products/${product.slug}` }
   ];
   
@@ -447,7 +447,7 @@ export default function ProductDetail() {
         
         {/* Related Products */}
         {relatedProducts.length > 0 && (
-          <div>
+          <div className="mb-16">
             <h2 className="text-2xl font-bold mb-6">You May Also Like</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
               {relatedProducts.map(relatedProduct => (

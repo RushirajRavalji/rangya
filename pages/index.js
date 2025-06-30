@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import Head from 'next/head';
-import HeroSection from '../components/home/HeroSection';
+import Carousel from '../components/home/Carousel';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useCart } from '../contexts/CartContext';
@@ -12,7 +12,7 @@ import ProductCard from '../components/products/ProductCard';
 import FeaturedCategories from '../components/home/FeaturedCategories';
 import Testimonials from '../components/home/Testimonials';
 import Newsletter from '../components/home/Newsletter';
-import SEO, { generateOrganizationStructuredData } from '../components/common/SEO';
+import SEO from '../components/common/SEO';
 
 export default function Home({ initialProducts }) {
   const [products, setProducts] = useState(initialProducts || []);
@@ -127,9 +127,6 @@ export default function Home({ initialProducts }) {
     }
   };
 
-  // Structured data for the homepage
-  const structuredData = generateOrganizationStructuredData();
-
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -164,10 +161,9 @@ export default function Home({ initialProducts }) {
             }
           ]
         }}
-        structuredData={structuredData}
       />
 
-      <HeroSection />
+      <Carousel />
 
       <main className="container mx-auto px-4 py-12">
         {/* Sale Banner */}

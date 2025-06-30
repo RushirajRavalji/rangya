@@ -28,16 +28,74 @@ export default function AdminOrders() {
         setLoading(true);
         setError(null);
         
-        const allOrders = await getAllOrders({
+        console.log('=== START: Fetching all orders from admin orders page ===');
+        const response = await getAllOrders({
           sortBy: 'createdAt',
           sortOrder: 'desc'
         });
         
-        setOrders(allOrders);
-        setTotalPages(Math.ceil(allOrders.length / ordersPerPage));
+        console.log('=== RESPONSE RECEIVED ===');
+        console.log('Response structure:', JSON.stringify(Object.keys(response)));
+        
+        // Process orders to ensure uniqueness and consistent customer data
+        const allOrders = response.orders || [];
+        
+        if (!Array.isArray(allOrders)) {
+          console.error('Orders is not an array:', allOrders);
+          setError('Invalid orders data format. Please contact support.');
+          return;
+        }
+        
+        // Create a map of orders by ID to remove duplicates
+        const ordersMap = {};
+        
+        allOrders.forEach(order => {
+          // If this order ID already exists in our map, only keep one instance
+          // and ensure customer data is consistent
+          if (!ordersMap[order.id]) {
+            ordersMap[order.id] = {
+              ...order,
+              // Make sure customer data is consistent
+              customer: {
+                name: order.customer?.name || 'N/A',
+                email: order.customer?.email || 'N/A'
+              }
+            };
+          }
+        });
+        
+        // Convert back to array
+        const uniqueOrders = Object.values(ordersMap);
+        setOrders(uniqueOrders);
+        
+        if (uniqueOrders.length === 0) {
+          console.log('No orders found in the response');
+          setError('No orders found. This could be because there are no orders in the system yet.');
+        } else {
+          console.log(`=== SUCCESS: Loaded ${uniqueOrders.length} unique orders ===`);
+          if (uniqueOrders[0]) {
+            console.log('First order sample:', JSON.stringify(uniqueOrders[0]));
+            console.log('First order ID:', uniqueOrders[0].id);
+            console.log('First order customer:', uniqueOrders[0].customer);
+            console.log('First order status:', uniqueOrders[0].status);
+            console.log('First order total:', uniqueOrders[0].total || uniqueOrders[0].totalAmount);
+          }
+        }
+        
+        setTotalPages(Math.ceil(uniqueOrders.length / ordersPerPage));
       } catch (err) {
-        console.error('Error fetching orders:', err);
-        setError('Failed to load orders');
+        console.error('=== ERROR: Failed to fetch orders ===', err);
+        let errorMessage = 'Failed to load orders';
+        
+        if (err.code === 'DATABASE') {
+          errorMessage += ': Database error occurred';
+        } else if (err.message) {
+          errorMessage += ': ' + err.message;
+        } else {
+          errorMessage += ': Unknown error';
+        }
+        
+        setError(errorMessage);
       } finally {
         setLoading(false);
       }
@@ -139,6 +197,15 @@ export default function AdminOrders() {
     }
   };
 
+  // Format currency
+  const formatCurrency = (amount) => {
+    return new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR',
+      maximumFractionDigits: 2
+    }).format(amount || 0).replace(/^(\D+)/, '₹');
+  };
+
   return (
     <AdminLayout title="Orders Management">
       {/* Search and Filters */}
@@ -235,11 +302,22 @@ export default function AdminOrders() {
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-indigo-deep">
                       #{order.id.slice(0, 8)}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {order.customer?.name || 'N/A'}
-                      {order.customer?.email && (
-                        <p className="text-xs text-gray-500">{order.customer.email}</p>
-                      )}
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div>
+                        <div className="text-sm font-medium text-gray-900">
+                          {order.customer?.name || order.shippingAddress?.fullName || 'Guest Customer'}
+                        </div>
+                        {order.customer?.email && (
+                          <div className="text-xs text-gray-500">
+                            {order.customer.email}
+                          </div>
+                        )}
+                        {order.customer?.phone && (
+                          <div className="text-xs text-gray-500">
+                            {order.customer.phone}
+                          </div>
+                        )}
+                      </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       <div className="flex items-center">
@@ -251,20 +329,20 @@ export default function AdminOrders() {
                       <button
                         onClick={() => {
                           setSelectedOrder(order);
-                          setNewStatus(order.status);
+                          setNewStatus(order.status || 'pending');
                           setShowStatusModal(true);
                         }}
-                        className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusBadgeColor(order.status)} hover:bg-opacity-80`}
+                        className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusBadgeColor(order.status || 'pending')} hover:bg-opacity-80`}
                       >
-                        {order.status.charAt(0).toUpperCase() + order.status.slice(1)}
+                        {(order.status || 'pending').charAt(0).toUpperCase() + (order.status || 'pending').slice(1)}
                       </button>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      ₹{order.total.toFixed(2)}
+                      {formatCurrency(order.totalAmount || order.total || 0)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                       <Link 
-                        href={`/admin/orders/id?id=${order.id}`}
+                        href={`/admin/orders/${order.id}`}
                         className="text-indigo-deep hover:text-blue-800 inline-flex items-center"
                       >
                         <FiEye className="mr-1" /> View Details
@@ -389,4 +467,4 @@ export default function AdminOrders() {
       )}
     </AdminLayout>
   );
-} 
+}

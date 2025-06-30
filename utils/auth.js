@@ -14,8 +14,20 @@ import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import jwt from 'jsonwebtoken';
 
 // JWT verification constants
-const JWT_SECRET = process.env.JWT_SECRET;
+let JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRY = '1h';
+
+// If JWT secret is not set in environment, use a fallback for development
+if (!JWT_SECRET) {
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error("JWT_SECRET environment variable is not set. This is required for production.");
+  } else {
+    // In development, use a fallback secret but warn
+    console.error("JWT_SECRET environment variable is not set. Using a fallback secret for development.");
+    console.error("For production, set a permanent JWT_SECRET in your environment variables.");
+    JWT_SECRET = 'development_fallback_secret_do_not_use_in_production_12345';
+  }
+}
 
 /**
  * Verify a JWT token
@@ -23,11 +35,6 @@ const JWT_EXPIRY = '1h';
  * @returns {Object|null} Decoded token payload or null if invalid
  */
 export const verifyJWT = (token) => {
-  if (!JWT_SECRET) {
-    console.error('JWT_SECRET environment variable is not set');
-    return null;
-  }
-  
   try {
     return jwt.verify(token, JWT_SECRET, {
       algorithms: ['HS256'],
@@ -45,11 +52,6 @@ export const verifyJWT = (token) => {
  * @returns {string} JWT token
  */
 export const generateJWT = (user) => {
-  if (!JWT_SECRET) {
-    console.error('JWT_SECRET environment variable is not set');
-    throw new Error('Server configuration error');
-  }
-  
   const payload = {
     uid: user.uid,
     email: user.email,

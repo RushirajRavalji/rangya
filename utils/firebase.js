@@ -48,8 +48,8 @@ const firebaseConfig = {
   projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "nikhils-jeans-website",
   storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || "nikhils-jeans-website.firebasestorage.app",
   messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || "89588207516",
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || "1:89588207516:web:0cfbe407bb6d7cc8764259",
-  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID || "G-ZHMF1GS857"
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || "1:89588207516:web:6a724c3a7aa92907764259",
+  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID || "G-4BVSWZ754P"
 };
 
 // Print out the current domain to help with debugging auth issues
@@ -137,6 +137,13 @@ try {
         .catch(error => {
           console.error('Error setting auth persistence:', error);
         });
+      
+      // Log Firebase configuration status for debugging
+      console.log('Firebase API Key status:', firebaseConfig.apiKey ? 'Available' : 'Missing');
+      
+      if (!firebaseConfig.apiKey || firebaseConfig.apiKey === 'your-firebase-api-key') {
+        console.error('Firebase API Key is missing or invalid. Google Sign-In will not work.');
+      }
     }
     
     // Connect to emulators in development if enabled

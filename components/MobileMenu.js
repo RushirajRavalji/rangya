@@ -66,7 +66,7 @@ export default function MobileMenu({ isOpen, setIsOpen, currentUser, userRole, h
                 My Orders
               </Link>
               
-              {userRole === 'admin' && (
+              {userRole === 'admin' && !router.pathname.startsWith('/admin') && (
                 <Link 
                   href="/admin" 
                   className="flex items-center py-2 text-gray-700"

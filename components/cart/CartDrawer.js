@@ -1,16 +1,17 @@
+import { useState } from 'react';
 import { useRouter } from 'next/router';
-import { FiX, FiTrash2, FiShoppingBag } from 'react-icons/fi';
+import { FiX, FiTrash2, FiShoppingBag, FiMinus, FiPlus } from 'react-icons/fi';
 import { useCart } from '../../contexts/CartContext';
 import OptimizedImage from '../common/OptimizedImage';
 import { isBase64Image } from '../../utils/imageUtils';
 
 const CartDrawer = ({ isOpen, onClose }) => {
   const router = useRouter();
+  const [promoCode, setPromoCode] = useState('');
   const { 
     cartItems, 
     loading, 
     discount, 
-    promoCode, 
     subtotal, 
     discountAmount, 
     total,
@@ -31,6 +32,15 @@ const CartDrawer = ({ isOpen, onClose }) => {
   const proceedToCheckout = () => {
     onClose();
     router.push('/checkout');
+  };
+
+  const handleUpdateQuantity = (productId, size, newQuantity) => {
+    if (newQuantity < 1) return;
+    updateQuantity(productId, size, newQuantity);
+  };
+
+  const handleRemoveItem = (productId, size) => {
+    removeItem(productId, size);
   };
 
   return (
@@ -84,7 +94,7 @@ const CartDrawer = ({ isOpen, onClose }) => {
             </div>
           ) : (
             <ul className="divide-y divide-gray-200">
-              {cartItems.map((item, index) => (
+              {cartItems.map((item) => (
                 <li key={`${item.id}-${item.size}`} className="py-6">
                   <div className="flex items-center">
                     <div className="w-16 h-16 bg-gray-100 rounded-md overflow-hidden mr-4">
@@ -114,21 +124,22 @@ const CartDrawer = ({ isOpen, onClose }) => {
                       <div className="flex items-center border border-gray-300 rounded">
                         <button 
                           className="px-2 py-1 text-gray-500 hover:text-gray-700"
-                          onClick={() => updateQuantity(index, item.quantity - 1)}
+                          onClick={() => handleUpdateQuantity(item.id, item.size, item.quantity - 1)}
+                          disabled={item.quantity <= 1}
                         >
-                          -
+                          <FiMinus size={14} />
                         </button>
                         <span className="px-2 text-sm">{item.quantity}</span>
                         <button 
                           className="px-2 py-1 text-gray-500 hover:text-gray-700"
-                          onClick={() => updateQuantity(index, item.quantity + 1)}
+                          onClick={() => handleUpdateQuantity(item.id, item.size, item.quantity + 1)}
                         >
-                          +
+                          <FiPlus size={14} />
                         </button>
                       </div>
                       <button 
                         className="text-gray-400 hover:text-red-500"
-                        onClick={() => removeItem(index)}
+                        onClick={() => handleRemoveItem(item.id, item.size)}
                         aria-label="Remove item"
                       >
                         <FiTrash2 size={16} />

@@ -1,86 +1,62 @@
-import { initializeApp, getApps, cert } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
-import { getAuth } from 'firebase-admin/auth';
-import { getStorage } from 'firebase-admin/storage';
+import admin from "firebase-admin";
+import { ensureFirebaseEnv } from './loadEnv';
+import path from 'path';
+import fs from 'fs';
 
-// Firebase Admin SDK initialization
-let adminApp;
+if (typeof window === 'undefined') {
+  // Ensure environment variables are loaded server-side
+  ensureFirebaseEnv();
+}
 
-/**
- * Initialize Firebase Admin SDK if not already initialized
- * @returns {Object} Firebase Admin app instance
- */
-export function initAdmin() {
-  if (getApps().length > 0) {
-    return getApps()[0];
+let isInitialized = false;
+
+export const initAdmin = () => {
+  if (isInitialized || admin.apps.length > 0) {
+    return admin;
   }
+
+  let credentialConfig = null;
   
-  // Check if we have the required environment variables
-  const privateKey = process.env.FIREBASE_PRIVATE_KEY;
-  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-  const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
-  
-  if (!privateKey || !clientEmail || !projectId) {
-    console.error('Missing Firebase Admin SDK credentials in environment variables');
-    throw new Error('Firebase Admin SDK credentials are not properly configured');
+  if (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PRIVATE_KEY) {
+    credentialConfig = {
+      projectId: process.env.FIREBASE_PROJECT_ID,
+      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+      privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, "\n"),
+    };
+  } else {
+    // Fallback to serviceAccountKey.json if present
+    try {
+      const keyPath = path.join(process.cwd(), 'serviceAccountKey.json');
+      if (fs.existsSync(keyPath)) {
+        credentialConfig = JSON.parse(fs.readFileSync(keyPath, 'utf8'));
+        console.log('[firebase-admin] Loaded credentials from serviceAccountKey.json');
+      }
+    } catch (err) {
+      console.error('[firebase-admin] Failed to load serviceAccountKey.json', err);
+    }
   }
-  
-  try {
-    // Initialize Firebase Admin SDK
-    adminApp = initializeApp({
-      credential: cert({
-        projectId,
-        clientEmail,
-        // The private key comes as a string with escaped newlines, so we need to replace them
-        privateKey: privateKey.replace(/\\n/g, '\n'),
-      }),
-      storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+
+  if (!credentialConfig) {
+    console.error('[firebase-admin] Missing Firebase Admin credentials. Please set env vars or provide serviceAccountKey.json');
+    throw new Error('Firebase Admin credentials not found');
+  } else {
+    admin.initializeApp({
+      credential: admin.credential.cert(credentialConfig),
     });
-    
-    console.log('Firebase Admin SDK initialized successfully');
-    return adminApp;
+    isInitialized = true;
+    console.log('[firebase-admin] Firebase Admin initialized successfully');
+  }
+
+  return admin;
+};
+
+// Initialize immediately if not already done
+if (!admin.apps.length) {
+  try {
+    initAdmin();
   } catch (error) {
-    console.error('Error initializing Firebase Admin SDK:', error);
-    throw error;
+    console.error('[firebase-admin] Failed to initialize:', error);
   }
 }
 
-/**
- * Get Firestore Admin instance
- * @returns {Object} Firestore Admin instance
- */
-export function getAdminFirestore() {
-  if (!adminApp && getApps().length === 0) {
-    initAdmin();
-  }
-  return getFirestore();
-}
-
-/**
- * Get Auth Admin instance
- * @returns {Object} Auth Admin instance
- */
-export function getAdminAuth() {
-  if (!adminApp && getApps().length === 0) {
-    initAdmin();
-  }
-  return getAuth();
-}
-
-/**
- * Get Storage Admin instance
- * @returns {Object} Storage Admin instance
- */
-export function getAdminStorage() {
-  if (!adminApp && getApps().length === 0) {
-    initAdmin();
-  }
-  return getStorage();
-}
-
-export default {
-  initAdmin,
-  getAdminFirestore,
-  getAdminAuth,
-  getAdminStorage
-}; 
+export default admin;

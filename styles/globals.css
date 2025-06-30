@@ -34,4 +34,74 @@
   .container {
     @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8;
   }
-} 
+}
+
+@layer utilities {
+  @media print {
+    .print-only {
+      display: block !important;
+    }
+    .no-print {
+      display: none !important;
+    }
+    body {
+      background-color: white !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+      color: black !important;
+      font-size: 12pt !important;
+    }
+    .print-container {
+      width: 100% !important;
+      max-width: 100% !important;
+      margin: 0 !important;
+      padding: 0.5in !important;
+      box-shadow: none !important;
+    }
+    /* Fix for table layout in print */
+    table {
+      width: 100% !important;
+      border-collapse: collapse !important;
+    }
+    th, td {
+      padding: 8px !important;
+      border: 1px solid #ddd !important;
+    }
+    
+    /* Order details specific print styles */
+    .print-container h1 {
+      font-size: 20pt !important;
+      margin-bottom: 10px !important;
+    }
+    .print-container h2 {
+      font-size: 16pt !important;
+      margin-bottom: 8px !important;
+    }
+    .print-container .rounded-lg,
+    .print-container .rounded-md,
+    .print-container .rounded-full {
+      border-radius: 0 !important;
+    }
+    .print-container .shadow-sm,
+    .print-container .shadow {
+      box-shadow: none !important;
+    }
+    .print-container .bg-white,
+    .print-container .bg-gray-50 {
+      background-color: transparent !important;
+    }
+    
+    /* Display grid properly in print */
+    .print-container .grid {
+      display: grid !important;
+    }
+    
+    /* Make sure backgrounds print */
+    .print-container * {
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+  }
+}

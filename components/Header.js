@@ -86,7 +86,7 @@ export default function Header() {
                 <Link href="/account/orders" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
                   My Orders
                 </Link>
-                {userRole === 'admin' && (
+                {userRole === 'admin' && !router.pathname.startsWith('/admin') && (
                   <Link href="/admin" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
                     Admin Dashboard
                   </Link>

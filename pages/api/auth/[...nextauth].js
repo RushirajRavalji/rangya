@@ -53,12 +53,22 @@ export const authOptions = {
       }
     }),
     GoogleProvider({
-      clientId: process.env.GOOGLE_CLIENT_ID,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+      clientId: process.env.GOOGLE_CLIENT_ID || '89588207516-vfvdtiqiv8uedud97gu616lq9bfe0n1q.apps.googleusercontent.com',
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
       authorization: {
         params: {
           prompt: "select_account"
         }
+      },
+      // Handle errors from Google authentication
+      async profile(profile) {
+        return {
+          id: profile.sub,
+          name: profile.name,
+          email: profile.email,
+          image: profile.picture,
+          emailVerified: profile.email_verified
+        };
       }
     })
   ],

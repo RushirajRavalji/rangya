@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { verifyJWT } from './utils/auth';
+import { verifyJWT } from './utils/edge-auth';
 
 /**
  * Middleware for authentication checking and security headers
@@ -16,6 +16,7 @@ export async function middleware(request) {
     '/verify-email',
     '/auth-diagnostic',
     '/api/auth',
+    '/api/auth/csrf',
     '/api/check-auth',
     '/api/check-firebase',
     '/_next/',
@@ -44,7 +45,7 @@ export async function middleware(request) {
   
   // Verify JWT token for protected routes
   if (!isPublicPath && jwtToken) {
-    const decodedToken = verifyJWT(jwtToken);
+    const decodedToken = await verifyJWT(jwtToken);
     
     // If token is invalid or expired, redirect to login
     if (!decodedToken) {
@@ -82,7 +83,8 @@ export async function middleware(request) {
     'X-Frame-Options': 'SAMEORIGIN',
     'X-Content-Type-Options': 'nosniff',
     'Referrer-Policy': 'strict-origin-when-cross-origin',
-    'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), interest-cohort=()',
+    'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), interest-cohort=(), payment=(), usb=(), fullscreen=(self), display-capture=()',
+    'Feature-Policy': 'camera none; microphone none; geolocation none; payment none; usb none; fullscreen self; display-capture none',
     
     // Content Security Policy - Updated to be more secure
     'Content-Security-Policy': `

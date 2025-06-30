@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
+import Head from 'next/head';
 import { FiHeart, FiTrash2, FiLoader, FiShoppingCart, FiAlertCircle } from 'react-icons/fi';
 import { useAuth } from '../../contexts/AuthContext';
 import { db } from '../../utils/firebase';
 import { doc, getDoc, setDoc, arrayRemove, updateDoc } from 'firebase/firestore';
 import { getProductById } from '../../utils/productService';
-import AccountLayout from '../../components/layout/AccountLayout';
 import OptimizedImage from '../../components/common/OptimizedImage';
 
 export default function Wishlist() {
@@ -27,6 +27,7 @@ export default function Wishlist() {
     const fetchWishlist = async () => {
       try {
         setLoading(true);
+        setError(null);
         
         // Get user's wishlist document
         const userDocRef = doc(db, 'users', currentUser.uid);
@@ -35,10 +36,17 @@ export default function Wishlist() {
         if (userDoc.exists() && userDoc.data().wishlist) {
           const wishlistProductIds = userDoc.data().wishlist;
           
+          if (wishlistProductIds.length === 0) {
+            setWishlistItems([]);
+            setLoading(false);
+            return;
+          }
+          
           // Fetch details for each product in wishlist
           const productPromises = wishlistProductIds.map(async (productId) => {
             try {
-              return await getProductById(productId);
+              const product = await getProductById(productId);
+              return product;
             } catch (err) {
               console.error(`Error fetching product ${productId}:`, err);
               return null;
@@ -46,7 +54,16 @@ export default function Wishlist() {
           });
           
           const products = await Promise.all(productPromises);
-          setWishlistItems(products.filter(product => product !== null));
+          const validProducts = products.filter(product => product !== null);
+          setWishlistItems(validProducts);
+          
+          // If some products couldn't be found, update the wishlist to remove them
+          if (validProducts.length !== wishlistProductIds.length) {
+            const validProductIds = validProducts.map(product => product.id);
+            await updateDoc(userDocRef, {
+              wishlist: validProductIds
+            });
+          }
         } else {
           // Create wishlist if it doesn't exist
           await setDoc(userDocRef, { wishlist: [] }, { merge: true });
@@ -89,6 +106,9 @@ export default function Wishlist() {
       // Check if product already in cart
       const existingItem = cart.find(item => item.id === product.id);
       
+      // Get product name (handle both name and name_en fields)
+      const productName = product.name || product.name_en || 'Product';
+      
       if (existingItem) {
         // Increment quantity if already in cart
         existingItem.quantity += 1;
@@ -96,7 +116,7 @@ export default function Wishlist() {
         // Add new item to cart
         cart.push({
           id: product.id,
-          name: product.name_en,
+          name: productName,
           price: product.salePrice || product.price,
           image: product.images && product.images.length > 0 ? product.images[0] : null,
           quantity: 1,
@@ -111,7 +131,7 @@ export default function Wishlist() {
       // Trigger storage event for other components to update
       window.dispatchEvent(new Event('storage'));
       
-      alert(`${product.name_en} added to cart`);
+      alert(`${productName} added to cart`);
     } catch (err) {
       console.error('Error adding to cart:', err);
       alert('Failed to add item to cart');
@@ -120,19 +140,33 @@ export default function Wishlist() {
 
   if (loading) {
     return (
-      <AccountLayout title="My Wishlist">
+      <div className="container mx-auto px-4 py-8">
+        <Head>
+          <title>My Wishlist | Rangya</title>
+          <meta name="description" content="View and manage your wishlist items" />
+        </Head>
         <div className="flex justify-center items-center h-64">
           <div className="flex flex-col items-center">
             <FiLoader className="animate-spin text-indigo-deep h-8 w-8 mb-4" />
             <p>Loading your wishlist...</p>
           </div>
         </div>
-      </AccountLayout>
+      </div>
     );
   }
 
   return (
-    <AccountLayout title="My Wishlist">
+    <div className="container mx-auto px-4 py-8">
+      <Head>
+        <title>My Wishlist | Rangya</title>
+        <meta name="description" content="View and manage your wishlist items" />
+      </Head>
+      
+      <div className="mb-8">
+        <h1 className="text-2xl font-bold text-gray-900">My Wishlist</h1>
+        <p className="text-gray-600">Manage your saved items</p>
+      </div>
+      
       {error && (
         <div className="bg-red-50 border border-red-200 rounded-md p-4 mb-6 flex items-center">
           <FiAlertCircle className="text-red-500 mr-3" />
@@ -196,7 +230,7 @@ export default function Wishlist() {
                         </div>
                         <div>
                           <Link href={`/products/${product.slug}`} className="text-sm font-medium text-gray-900 hover:text-indigo-deep">
-                            {product.name_en}
+                            {product.name || product.name_en || 'Product'}
                           </Link>
                           <p className="text-xs text-gray-500">{product.category}</p>
                         </div>
@@ -249,6 +283,6 @@ export default function Wishlist() {
           </div>
         </div>
       )}
-    </AccountLayout>
+    </div>
   );
-} 
+}

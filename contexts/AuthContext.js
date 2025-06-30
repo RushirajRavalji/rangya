@@ -266,6 +266,13 @@ export function AuthProvider({ children }) {
       
       console.log("Starting Google sign-in popup...");
       
+      // Check if Firebase is properly configured for Google Auth
+      if (!process.env.NEXT_PUBLIC_FIREBASE_API_KEY) {
+        console.error("Firebase API key is missing");
+        setError("Authentication service is not properly configured. Please contact support.");
+        throw new Error("Firebase API key is missing");
+      }
+      
       // Try to make sure popup works by checking for popup blockers
       const popupBlocked = window.innerWidth <= 0 || window.innerHeight <= 0;
       if (popupBlocked) {
@@ -412,6 +419,24 @@ export function AuthProvider({ children }) {
       
       if (userDoc.exists()) {
         const userData = userDoc.data();
+        // Check if this is our designated admin email
+        if (userData.email === 'driger.ray.dranzer@gmail.com') {
+          // Set as admin regardless of what's in the database
+          setUserRole('admin');
+          
+          // Update the role in the database if it's not already set
+          if (userData.role !== 'admin') {
+            try {
+              await setDoc(userRef, { role: 'admin', updatedAt: serverTimestamp() }, { merge: true });
+              console.log('Updated user to admin role in database');
+            } catch (updateError) {
+              console.error('Error updating admin role:', updateError);
+            }
+          }
+          
+          return 'admin';
+        }
+        
         setUserRole(userData.role || 'customer');
         return userData.role || 'customer';
       } else {
@@ -443,8 +468,26 @@ export function AuthProvider({ children }) {
           setCurrentUser(user);
           
           if (user) {
-            // Get user role from Firestore
-            await getUserRole(user.uid);
+            // Check if this is our designated admin email
+            if (user.email === 'driger.ray.dranzer@gmail.com') {
+              setUserRole('admin');
+              
+              // Update the role in the database
+              try {
+                const userRef = doc(db, 'users', user.uid);
+                await setDoc(userRef, { 
+                  role: 'admin', 
+                  email: user.email,
+                  updatedAt: serverTimestamp() 
+                }, { merge: true });
+                console.log('Updated user to admin role in database during auth state change');
+              } catch (updateError) {
+                console.error('Error updating admin role during auth state change:', updateError);
+              }
+            } else {
+              // Get user role from Firestore for non-admin emails
+              await getUserRole(user.uid);
+            }
             
             // Store authentication token in cookie
             try {
@@ -523,4 +566,4 @@ export function AuthProvider({ children }) {
       )}
     </AuthContext.Provider>
   );
-} 
+}

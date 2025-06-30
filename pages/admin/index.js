@@ -30,7 +30,8 @@ import {
   FiArrowUp,
   FiArrowDown,
   FiShoppingCart,
-  FiUserPlus
+  FiUserPlus,
+  FiEdit
 } from 'react-icons/fi';
 import AdminLayout from '../../components/layout/AdminLayout';
 
@@ -74,59 +75,144 @@ export default function AdminDashboard() {
     );
     unsubscribers.push(productsUnsubscribe);
 
-    // Orders listener
-    const ordersRef = collection(db, 'orders');
-    const ordersUnsubscribe = onSnapshot(
-      query(ordersRef),
-      (snapshot) => {
-        const orders = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
-
-        // Calculate total revenue from non-cancelled orders
-        const totalRevenue = orders.reduce((sum, order) => {
-          if (order.status !== 'cancelled') {
-            return sum + (order.total || 0);
-          }
-          return sum;
-        }, 0);
-
-        setStats(prev => ({ 
-          ...prev, 
-          orders: orders.length,
-          revenue: totalRevenue
-        }));
-      },
-      (error) => {
-        console.error('Error listening to orders:', error);
-      }
-    );
-    unsubscribers.push(ordersUnsubscribe);
-
-    // Recent orders listener
-    const recentOrdersRef = collection(db, 'orders');
-    const recentOrdersUnsubscribe = onSnapshot(
-      query(recentOrdersRef, orderBy('createdAt', 'desc'), limit(5)),
-      (snapshot) => {
-        const orders = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
-        setRecentOrders(orders);
-        setLoading(false);
-      },
-      (error) => {
-        console.error('Error listening to recent orders:', error);
-        setLoading(false);
-      }
-    );
-    unsubscribers.push(recentOrdersUnsubscribe);
-
-    // Users listener
+    // Orders listener - aggregate from all users' orders subcollections
+    // First, get all users
     const usersRef = collection(db, 'users');
     const usersUnsubscribe = onSnapshot(
       query(usersRef),
+      async (usersSnapshot) => {
+        let allOrders = [];
+        let totalRevenue = 0;
+        
+        // For each user, set up a listener for their orders
+        const userOrdersUnsubscribers = [];
+        
+        usersSnapshot.forEach((userDoc) => {
+          const userId = userDoc.id;
+          const userOrdersRef = collection(db, 'users', userId, 'orders');
+          
+          const userOrdersUnsubscribe = onSnapshot(
+            query(userOrdersRef),
+            (orderSnapshot) => {
+              // Process orders for this user
+              const userOrders = orderSnapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data(),
+                userId: userId // Ensure userId is included
+              }));
+              
+              // Update the global orders count and revenue
+              allOrders = [...allOrders, ...userOrders];
+              
+              // Calculate revenue from non-cancelled orders
+              const userRevenue = userOrders.reduce((sum, order) => {
+                if (order.status !== 'cancelled') {
+                  return sum + (order.totalAmount || order.total || 0);
+                }
+                return sum;
+              }, 0);
+              
+              totalRevenue += userRevenue;
+              
+              // Update stats with the latest data
+              setStats(prev => ({
+                ...prev,
+                orders: allOrders.length,
+                revenue: totalRevenue
+              }));
+            },
+            (error) => {
+              console.error(`Error listening to orders for user ${userId}:`, error);
+            }
+          );
+          
+          userOrdersUnsubscribers.push(userOrdersUnsubscribe);
+        });
+        
+        // Add the user orders unsubscribers to the main unsubscribers array
+        unsubscribers.push(...userOrdersUnsubscribers);
+      },
+      (error) => {
+        console.error('Error listening to users for orders:', error);
+      }
+    );
+    unsubscribers.push(usersUnsubscribe);
+
+    // Recent orders listener - aggregate from all users' orders subcollections
+    // This is handled separately from the main orders listener to specifically get the most recent orders
+    const fetchRecentOrders = async () => {
+      try {
+        // Get all users
+        const usersSnapshot = await getDocs(query(collection(db, 'users')));
+        let allRecentOrders = [];
+        
+        // For each user, get their orders
+        const orderPromises = usersSnapshot.docs.map(async (userDoc) => {
+          const userId = userDoc.id;
+          const userOrdersRef = collection(db, 'users', userId, 'orders');
+          
+          // Query the most recent orders for this user
+          const userOrdersSnapshot = await getDocs(
+            query(userOrdersRef, orderBy('createdAt', 'desc'), limit(10))
+          );
+          
+          // Map the orders and include user information
+          return userOrdersSnapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data(),
+            userId: userId,
+            customer: {
+              name: userDoc.data().displayName || 'Unknown',
+              email: userDoc.data().email || 'No email'
+            }
+          }));
+        });
+        
+        // Wait for all order queries to complete
+        const userOrdersArrays = await Promise.all(orderPromises);
+        
+        // Flatten the array of arrays into a single array of orders
+        allRecentOrders = userOrdersArrays.flat();
+        
+        // Sort by createdAt (most recent first)
+        allRecentOrders.sort((a, b) => {
+          const aTime = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : 
+                       a.createdAt instanceof Date ? a.createdAt.getTime() : 
+                       typeof a.createdAt === 'string' ? new Date(a.createdAt).getTime() : 0;
+                       
+          const bTime = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : 
+                       b.createdAt instanceof Date ? b.createdAt.getTime() : 
+                       typeof b.createdAt === 'string' ? new Date(b.createdAt).getTime() : 0;
+                       
+          return bTime - aTime; // descending order (most recent first)
+        });
+        
+        // Take only the 5 most recent orders
+        const mostRecentOrders = allRecentOrders.slice(0, 5);
+        
+        // Update state
+        setRecentOrders(mostRecentOrders);
+        setLoading(false);
+      } catch (error) {
+        console.error('Error fetching recent orders:', error);
+        setLoading(false);
+      }
+    };
+    
+    // Initial fetch of recent orders
+    fetchRecentOrders();
+    
+    // Set up a periodic refresh of recent orders (every 30 seconds)
+    const recentOrdersInterval = setInterval(fetchRecentOrders, 30000);
+    
+    // Clean up the interval on unmount
+    const clearRecentOrdersInterval = () => clearInterval(recentOrdersInterval);
+    unsubscribers.push(clearRecentOrdersInterval);
+
+    // Users listener
+    const usersRefForCount = collection(db, 'users');
+    const usersCountUnsubscribe = onSnapshot(
+      query(usersRefForCount),
       (snapshot) => {
         setStats(prev => ({ ...prev, users: snapshot.size }));
       },
@@ -134,13 +220,13 @@ export default function AdminDashboard() {
         console.error('Error listening to users:', error);
       }
     );
-    unsubscribers.push(usersUnsubscribe);
+    unsubscribers.push(usersCountUnsubscribe);
 
     // Clean up listeners on unmount
     return () => {
       unsubscribers.forEach(unsubscribe => unsubscribe());
     };
-  }, [currentUser, router, userRole]);
+  }, [currentUser, router, userRole]); // End of useEffect dependency array
 
   if (!currentUser || userRole !== 'admin') {
     return null; // Will redirect in useEffect
@@ -156,6 +242,15 @@ export default function AdminDashboard() {
       month: 'short',
       day: 'numeric'
     }).format(date);
+  };
+
+  // Format currency
+  const formatCurrency = (amount) => {
+    return new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR',
+      maximumFractionDigits: 2
+    }).format(amount).replace(/^(\D+)/, '₹');
   };
 
   // Get status badge color
@@ -179,230 +274,150 @@ export default function AdminDashboard() {
   return (
     <AdminLayout title="Dashboard">
       <Head>
-        <title>Admin Dashboard | Ranga</title>
-        <meta name="description" content="Admin dashboard for Ranga e-commerce" />
+        <title>Admin Dashboard</title>
       </Head>
-
-      <div className="container mx-auto">
-        {/* Main Content */}
-        <div className="flex-1 p-4 md:p-6 lg:p-8">
-          <div className="flex justify-between items-center mb-8">
-            <h2 className="text-2xl font-bold">Dashboard Overview</h2>
-            <Link href="/admin/products/new" className="bg-orange-vibrant hover:bg-orange-600 text-white px-4 py-2 rounded-md flex items-center">
-              <FiPlusCircle className="mr-2" />
-              Add New Product
+      
+      {loading ? (
+        <div className="flex justify-center items-center h-64">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-deep"></div>
+          <span className="ml-3">Loading dashboard data...</span>
+        </div>
+      ) : (
+        <>
+          <div className="mb-8">
+            <h2 className="text-2xl font-bold text-gray-800 mb-6">Dashboard Overview</h2>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              {/* Products Card */}
+              <div className="bg-white rounded-lg shadow-sm overflow-hidden">
+                <div className="p-6">
+                  <div className="flex justify-between">
+                    <div>
+                      <h3 className="text-gray-500 text-sm font-medium mb-1">Products</h3>
+                      <p className="text-3xl font-bold text-gray-800">{stats.products}</p>
+                    </div>
+                    <div className="bg-blue-100 p-3 rounded-full">
+                      <FiPackage className="h-6 w-6 text-blue-600" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Orders Card */}
+              <div className="bg-white rounded-lg shadow-sm overflow-hidden">
+                <div className="p-6">
+                  <div className="flex justify-between">
+                    <div>
+                      <h3 className="text-gray-500 text-sm font-medium mb-1">Orders</h3>
+                      <p className="text-3xl font-bold text-gray-800">{stats.orders}</p>
+                    </div>
+                    <div className="bg-green-100 p-3 rounded-full">
+                      <FiShoppingBag className="h-6 w-6 text-green-600" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Users Card */}
+              <div className="bg-white rounded-lg shadow-sm overflow-hidden">
+                <div className="p-6">
+                  <div className="flex justify-between">
+                    <div>
+                      <h3 className="text-gray-500 text-sm font-medium mb-1">Users</h3>
+                      <p className="text-3xl font-bold text-gray-800">{stats.users}</p>
+                    </div>
+                    <div className="bg-indigo-100 p-3 rounded-full">
+                      <FiUsers className="h-6 w-6 text-indigo-600" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Revenue Card */}
+              <div className="bg-white rounded-lg shadow-sm overflow-hidden">
+                <div className="p-6">
+                  <div className="flex justify-between">
+                    <div>
+                      <h3 className="text-gray-500 text-sm font-medium mb-1">Revenue</h3>
+                      <p className="text-3xl font-bold text-gray-800">{formatCurrency(stats.revenue)}</p>
+                    </div>
+                    <div className="bg-amber-100 p-3 rounded-full">
+                      <FiDollarSign className="h-6 w-6 text-amber-600" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          {/* Add New Product Button (Prominent) */}
+          <div className="flex justify-end mb-8">
+            <Link href="/admin/products/new" className="flex items-center bg-orange-500 hover:bg-orange-600 text-white px-6 py-3 rounded-md font-medium transition-colors">
+              <FiPlusCircle className="mr-2" /> Add New Product
             </Link>
           </div>
-
-          {loading ? (
-            <div className="flex justify-center items-center h-64">
-              <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-deep"></div>
+          
+          {/* Product Management Guide Section */}
+          <div className="bg-white p-6 rounded-lg shadow-sm">
+            <h2 className="text-xl font-bold text-gray-800 mb-6">Product Management Guide</h2>
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {/* Add New Products */}
+              <div className="bg-gray-50 p-6 rounded-lg border border-gray-200">
+                <div className="flex justify-center mb-4">
+                  <div className="bg-blue-100 p-4 rounded-full">
+                    <FiPlusCircle size={24} className="text-blue-600" />
+                  </div>
+                </div>
+                <h3 className="text-center font-bold text-lg mb-4">Add New Products</h3>
+                <ol className="list-decimal pl-5 space-y-2">
+                  <li>Click "Add New Product" button</li>
+                  <li>Fill in product details (name, description, price)</li>
+                  <li>Upload product images</li>
+                  <li>Add size and stock information</li>
+                  <li>Save the product</li>
+                </ol>
+              </div>
+              
+              {/* Product Details */}
+              <div className="bg-gray-50 p-6 rounded-lg border border-gray-200">
+                <div className="flex justify-center mb-4">
+                  <div className="bg-indigo-100 p-4 rounded-full">
+                    <FiEdit size={24} className="text-indigo-600" />
+                  </div>
+                </div>
+                <h3 className="text-center font-bold text-lg mb-4">Product Details</h3>
+                <p className="mb-3">For best results, include these details for each product:</p>
+                <ul className="list-disc pl-5 space-y-2">
+                  <li>Clear, descriptive name</li>
+                  <li>Detailed product description</li>
+                  <li>Accurate pricing information</li>
+                  <li>Available sizes and colors</li>
+                  <li>Material and care instructions</li>
+                </ul>
+              </div>
+              
+              {/* Product Images */}
+              <div className="bg-gray-50 p-6 rounded-lg border border-gray-200">
+                <div className="flex justify-center mb-4">
+                  <div className="bg-green-100 p-4 rounded-full">
+                    <FiImage size={24} className="text-green-600" />
+                  </div>
+                </div>
+                <h3 className="text-center font-bold text-lg mb-4">Product Images</h3>
+                <p className="mb-3">High-quality images increase sales. For each product:</p>
+                <ul className="list-disc pl-5 space-y-2">
+                  <li>Upload at least one high-resolution image</li>
+                  <li>Include multiple angles when possible</li>
+                  <li>Show the product in use</li>
+                  <li>Ensure proper lighting and clear focus</li>
+                  <li>Keep consistent image dimensions</li>
+                </ul>
+              </div>
             </div>
-          ) : (
-            <>
-              {/* Stats Cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-8">
-                <div className="bg-white rounded-lg shadow-md p-6 border-t-4 border-indigo-deep">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-gray-600">Products</p>
-                      <p className="text-2xl font-bold">{stats.products}</p>
-                    </div>
-                    <div className="p-3 rounded-full bg-indigo-100 text-indigo-deep">
-                      <FiShoppingBag size={24} />
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="bg-white rounded-lg shadow-md p-6 border-t-4 border-green-500">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-gray-600">Orders</p>
-                      <p className="text-2xl font-bold">{stats.orders}</p>
-                    </div>
-                    <div className="p-3 rounded-full bg-green-100 text-green-600">
-                      <FiPackage size={24} />
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="bg-white rounded-lg shadow-md p-6 border-t-4 border-blue-500">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-gray-600">Users</p>
-                      <p className="text-2xl font-bold">{stats.users}</p>
-                    </div>
-                    <div className="p-3 rounded-full bg-blue-100 text-blue-600">
-                      <FiUsers size={24} />
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="bg-white rounded-lg shadow-md p-6 border-t-4 border-purple-500">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-gray-600">Revenue</p>
-                      <p className="text-2xl font-bold">₹{stats.revenue.toFixed(2)}</p>
-                    </div>
-                    <div className="p-3 rounded-full bg-purple-100 text-purple-600">
-                      <FiDollarSign size={24} />
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Product Management Guide */}
-              <div className="bg-white rounded-lg shadow-md p-6 mb-8">
-                <h3 className="text-lg font-semibold mb-4">Product Management Guide</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
-                  <div className="border rounded-lg p-5 hover:shadow-lg transition-shadow">
-                    <div className="flex items-center justify-between mb-3">
-                      <h4 className="text-lg font-medium">Add New Products</h4>
-                      <div className="bg-indigo-deep/10 p-3 rounded-full">
-                        <FiPlusCircle className="text-indigo-deep" size={24} />
-                      </div>
-                    </div>
-                    <ol className="list-decimal list-inside space-y-2 text-gray-600">
-                      <li>Click "Add New Product" button</li>
-                      <li>Fill in product details (name, description, price)</li>
-                      <li>Select category and add product features</li>
-                      <li>Upload product images (up to 5)</li>
-                      <li>Set stock levels for each size</li>
-                    </ol>
-                    <Link href="/admin/products/new" className="mt-4 inline-block text-indigo-deep hover:underline">
-                      Add a product now →
-                    </Link>
-                  </div>
-
-                  <div className="border rounded-lg p-5 hover:shadow-lg transition-shadow">
-                    <div className="flex items-center justify-between mb-3">
-                      <h4 className="text-lg font-medium">Product Details</h4>
-                      <div className="bg-indigo-deep/10 p-3 rounded-full">
-                        <FiTag className="text-indigo-deep" size={24} />
-                      </div>
-                    </div>
-                    <p className="text-gray-600 mb-3">
-                      For best results, include these details for each product:
-                    </p>
-                    <ul className="list-disc list-inside space-y-2 text-gray-600">
-                      <li>Clear, descriptive product name</li>
-                      <li>Detailed product description</li>
-                      <li>Accurate pricing information</li>
-                      <li>Correct category assignment</li>
-                      <li>Product features and specifications</li>
-                    </ul>
-                  </div>
-
-                  <div className="border rounded-lg p-5 hover:shadow-lg transition-shadow">
-                    <div className="flex items-center justify-between mb-3">
-                      <h4 className="text-lg font-medium">Product Images</h4>
-                      <div className="bg-indigo-deep/10 p-3 rounded-full">
-                        <FiImage className="text-indigo-deep" size={24} />
-                      </div>
-                    </div>
-                    <p className="text-gray-600 mb-3">
-                      High-quality images increase sales. For each product:
-                    </p>
-                    <ul className="list-disc list-inside space-y-2 text-gray-600">
-                      <li>Upload at least one product image</li>
-                      <li>Use clear, well-lit photos</li>
-                      <li>Show product from multiple angles</li>
-                      <li>Include detail shots if relevant</li>
-                      <li>Maintain consistent image dimensions</li>
-                    </ul>
-                  </div>
-                </div>
-              </div>
-
-              {/* Recent Orders */}
-              <div className="mb-8">
-                <h2 className="text-lg font-semibold mb-4">Recent Orders</h2>
-                <div className="bg-white shadow-sm rounded-lg overflow-hidden">
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Order ID
-                          </th>
-                          <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Customer
-                          </th>
-                          <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Date
-                          </th>
-                          <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Status
-                          </th>
-                          <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                            Total
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody className="bg-white divide-y divide-gray-200">
-                        {recentOrders.length > 0 ? (
-                          recentOrders.map((order) => (
-                            <tr key={order.id} className="hover:bg-gray-50">
-                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-indigo-deep">
-                                #{order.id.slice(0, 8)}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                {order.customer?.name || 'N/A'}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                {formatDate(order.createdAt)}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap">
-                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusBadgeColor(order.status)}`}>
-                                  {order.status.charAt(0).toUpperCase() + order.status.slice(1)}
-                                </span>
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                ₹{order.total.toFixed(2)}
-                              </td>
-                            </tr>
-                          ))
-                        ) : (
-                          <tr>
-                            <td colSpan="5" className="px-6 py-4 text-center text-sm text-gray-500">
-                              No recent orders found
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </div>
-
-              {/* Quick Actions */}
-              <div className="bg-white rounded-lg p-6 shadow-md mb-8">
-                <h2 className="font-semibold text-xl mb-4">Quick Actions</h2>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <Link href="/admin/products/new" className="flex items-center justify-between px-5 py-4 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-colors">
-                    <span className="font-medium text-indigo-deep">Add Product</span>
-                    <div className="bg-indigo-deep p-2 rounded-full text-white">
-                      <FiPlusCircle size={18} />
-                    </div>
-                  </Link>
-                  <Link href="/admin/orders" className="flex items-center justify-between px-5 py-4 bg-green-50 hover:bg-green-100 rounded-lg transition-colors">
-                    <span className="font-medium text-green-700">View Orders</span>
-                    <div className="bg-green-600 p-2 rounded-full text-white">
-                      <FiShoppingCart size={18} />
-                    </div>
-                  </Link>
-                  <Link href="/admin/users" className="flex items-center justify-between px-5 py-4 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors">
-                    <span className="font-medium text-blue-700">Manage Users</span>
-                    <div className="bg-blue-600 p-2 rounded-full text-white">
-                      <FiUserPlus size={18} />
-                    </div>
-                  </Link>
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-      </div>
+          </div>
+        </>
+      )}
     </AdminLayout>
   );
 }
