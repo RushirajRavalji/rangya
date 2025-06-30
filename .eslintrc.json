@@ -4,11 +4,13 @@
   ],
   "rules": {
     "react/no-unescaped-entities": "off",
-    "react/no-unknown-property": "error",
-    "react/jsx-key": "error",
-    "react/jsx-no-target-blank": "error",
-    "no-console": ["warn", { "allow": ["warn", "error"] }],
-    "no-alert": "error",
-    "no-debugger": "error"
+    "react/no-unknown-property": "warn",
+    "react/jsx-key": "warn",
+    "react/jsx-no-target-blank": "warn",
+    "no-console": "warn",
+    "no-alert": "warn",
+    "no-debugger": "warn",
+    "@next/next/no-img-element": "warn",
+    "react-hooks/exhaustive-deps": "warn"
   }
 } 

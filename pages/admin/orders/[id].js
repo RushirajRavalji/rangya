@@ -228,7 +228,7 @@ export default function OrderDetail() {
     <AdminLayout title={`Order #${id ? id.slice(0, 8) : ''}`}>
       <Head>
         <title>Order #{order?.id?.slice(0, 8) || id?.slice(0, 8) || ''} - Admin</title>
-        <style jsx global>{`
+        <style type="text/css">{`
           @media print {
             .no-print {
               display: none !important;
