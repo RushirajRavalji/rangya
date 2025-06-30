@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
+import Head from 'next/head';
 import { FiArrowLeft, FiLoader, FiAlertCircle, FiPackage, FiTruck, FiCheckCircle, FiXCircle, FiX, FiClock } from 'react-icons/fi';
 import { useAuth } from '../../../contexts/AuthContext';
 import { getOrderById, cancelOrder, markOrderAsPaid } from '../../../utils/orderService';
 import OptimizedImage from '../../../components/common/OptimizedImage';
-import AccountLayout from '../../../components/layout/AccountLayout';
 
 export default function OrderDetail() {
   const router = useRouter();
@@ -215,20 +215,28 @@ export default function OrderDetail() {
 
   if (loading) {
     return (
-      <AccountLayout title="Order Details">
+      <div className="container mx-auto px-4 py-8">
+        <Head>
+          <title>Order Details | Rangya</title>
+          <meta name="description" content="View your order details" />
+        </Head>
         <div className="flex justify-center items-center h-64">
           <div className="flex flex-col items-center">
             <FiLoader className="animate-spin text-indigo-deep h-8 w-8 mb-4" />
             <p>Loading order details...</p>
           </div>
         </div>
-      </AccountLayout>
+      </div>
     );
   }
 
   if (error) {
     return (
-      <AccountLayout title="Order Details">
+      <div className="container mx-auto px-4 py-8">
+        <Head>
+          <title>Order Details | Rangya</title>
+          <meta name="description" content="View your order details" />
+        </Head>
         <div className="bg-red-50 border border-red-200 rounded-md p-4 mb-6 flex items-center">
           <FiAlertCircle className="text-red-500 mr-3" />
           <p>{error}</p>
@@ -238,13 +246,17 @@ export default function OrderDetail() {
             <FiArrowLeft className="mr-2" /> Back to Orders
           </Link>
         </div>
-      </AccountLayout>
+      </div>
     );
   }
 
   if (!order) {
     return (
-      <AccountLayout title="Order Details">
+      <div className="container mx-auto px-4 py-8">
+        <Head>
+          <title>Order Details | Rangya</title>
+          <meta name="description" content="View your order details" />
+        </Head>
         <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4 mb-6 flex items-center">
           <FiAlertCircle className="text-yellow-500 mr-3" />
           <p>Order not found</p>
@@ -254,12 +266,16 @@ export default function OrderDetail() {
             <FiArrowLeft className="mr-2" /> Back to Orders
           </Link>
         </div>
-      </AccountLayout>
+      </div>
     );
   }
 
   return (
-    <AccountLayout title={`Order #${order.id.slice(0, 8)}`}>
+    <div className="container mx-auto px-4 py-8">
+      <Head>
+        <title>Order #{order.id.slice(0, 8)} | Rangya</title>
+        <meta name="description" content="View details for your order" />
+      </Head>
       <div className="mb-6 flex justify-between items-center">
         <Link href="/account/orders" className="inline-flex items-center text-indigo-deep hover:text-blue-800">
           <FiArrowLeft className="mr-2" /> Back to Orders
@@ -515,6 +531,6 @@ export default function OrderDetail() {
           </div>
         </div>
       )}
-    </AccountLayout>
+    </div>
   );
-} 
+}

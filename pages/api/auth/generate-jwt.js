@@ -1,5 +1,4 @@
 import { generateJWT } from '../../../utils/auth';
-import { auth } from '../../../utils/firebase';
 import { getAuth } from 'firebase-admin/auth';
 import { initAdmin } from '../../../utils/firebase-admin';
 import { rateLimit } from '../../../utils/rateLimit';
@@ -82,4 +81,4 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: 'Failed to generate JWT token' });
     }
   }
-} 
+}

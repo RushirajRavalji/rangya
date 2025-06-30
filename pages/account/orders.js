@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
+import Head from 'next/head';
 import { FiPackage, FiChevronRight, FiLoader, FiAlertCircle, FiClock, FiCheckCircle, FiRefreshCw } from 'react-icons/fi';
 import { useAuth } from '../../contexts/AuthContext';
 import { getUserOrders } from '../../utils/orderService';
 import OptimizedImage from '../../components/common/OptimizedImage';
-import AccountLayout from '../../components/layout/AccountLayout';
 
 export default function Orders() {
   const router = useRouter();
@@ -27,8 +27,9 @@ export default function Orders() {
     try {
       setLoading(true);
       setError(false);
-      const userOrders = await getUserOrders(currentUser.uid);
-      setOrders(userOrders);
+      // Use returnDirectArray option to get array directly
+      const userOrders = await getUserOrders(currentUser.uid, { returnDirectArray: true });
+      setOrders(userOrders || []);
       setLoading(false);
     } catch (err) {
       console.error('Error fetching orders:', err);
@@ -38,7 +39,9 @@ export default function Orders() {
   };
 
   useEffect(() => {
-    fetchOrders();
+    if (currentUser) {
+      fetchOrders();
+    }
   }, [currentUser]);
 
   // Helper function to format date
@@ -98,19 +101,28 @@ export default function Orders() {
 
   if (loading) {
     return (
-      <AccountLayout title="My Orders">
+      <div className="container mx-auto px-4 py-8">
+        <Head>
+          <title>My Orders | Rangya</title>
+          <meta name="description" content="View your order history and track current orders" />
+        </Head>
         <div className="flex justify-center items-center h-64">
           <div className="flex flex-col items-center">
             <FiLoader className="animate-spin text-indigo-deep h-8 w-8 mb-4" />
             <p>Loading your orders...</p>
           </div>
         </div>
-      </AccountLayout>
+      </div>
     );
   }
 
   return (
-    <AccountLayout title="My Orders">
+    <div className="container mx-auto px-4 py-8">
+      <Head>
+        <title>My Orders | Rangya</title>
+        <meta name="description" content="View your order history and track current orders" />
+      </Head>
+      
       {error && (
         <div className="bg-white rounded-lg shadow p-8 text-center">
           <div className="inline-flex items-center justify-center h-16 w-16 rounded-full bg-red-100 text-red-500 mb-4">
@@ -166,7 +178,7 @@ export default function Orders() {
                     </span>
                     {getPaymentStatusBadge(order)}
                   </div>
-                  <p className="font-medium">₹{order.total.toFixed(2)}</p>
+                  <p className="font-medium">₹{order.total ? order.total.toFixed(2) : '0.00'}</p>
                 </div>
                 
                 <div className="space-y-3">
@@ -231,6 +243,6 @@ export default function Orders() {
           ))}
         </div>
       )}
-    </AccountLayout>
+    </div>
   );
-} 
+}

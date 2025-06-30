@@ -34,6 +34,7 @@ const OrderConfirmation = () => {
         setLoading(true);
         setError(null);
         
+        // First try to fetch from the new order structure
         const orderRef = doc(db, 'orders', orderId);
         const orderSnapshot = await getDoc(orderRef);
         
@@ -50,6 +51,16 @@ const OrderConfirmation = () => {
           setError('You do not have permission to view this order.');
           setLoading(false);
           return;
+        }
+        
+        // Check if the order has payment information
+        if (!orderData.paymentMethod) {
+          orderData.paymentMethod = 'cod'; // Default to COD if not specified
+        }
+        
+        // Check if the order has payment status
+        if (!orderData.paymentStatus) {
+          orderData.paymentStatus = 'pending'; // Default to pending if not specified
         }
         
         setOrder({ id: orderSnapshot.id, ...orderData });
@@ -191,7 +202,7 @@ const OrderConfirmation = () => {
                         <p className="mt-1 text-sm text-gray-500">Size: {item.size}</p>
                         <div className="mt-1 flex justify-between text-sm font-medium">
                           <p className="text-gray-500">Qty {item.quantity}</p>
-                          <p className="text-gray-900">₹{item.price} x {item.quantity} = ₹{item.price * item.quantity}</p>
+                          <p className="text-gray-900">₹{item.price.toFixed(2)} x {item.quantity} = ₹{(item.price * item.quantity).toFixed(2)}</p>
                         </div>
                       </div>
                     </div>
@@ -202,7 +213,7 @@ const OrderConfirmation = () => {
                 <div className="border-t border-gray-200 px-6 py-4">
                   <div className="flex justify-between text-base font-medium text-gray-900">
                     <p>Subtotal</p>
-                    <p>₹{order.subtotal}</p>
+                    <p>₹{order.subtotal.toFixed(2)}</p>
                   </div>
                   <div className="flex justify-between text-sm text-gray-500 mt-1">
                     <p>Shipping</p>
@@ -210,7 +221,7 @@ const OrderConfirmation = () => {
                   </div>
                   <div className="flex justify-between text-base font-medium text-gray-900 mt-4">
                     <p>Total</p>
-                    <p>₹{order.total}</p>
+                    <p>₹{order.total.toFixed(2)}</p>
                   </div>
                 </div>
                 
@@ -218,11 +229,59 @@ const OrderConfirmation = () => {
                 <div className="border-t border-gray-200 px-6 py-4">
                   <h3 className="text-base font-medium text-gray-900">Payment Information</h3>
                   <p className="mt-1 text-sm text-gray-500">
-                    Payment Method: <span className="font-medium">Cash on Delivery</span>
+                    Payment Method: <span className="font-medium">
+                      {order.payment?.method ? 
+                        (order.payment.method === 'cod' ? 'Cash on Delivery' : 
+                         order.payment.method === 'card' ? 'Credit/Debit Card' : 
+                         order.payment.method === 'upi' ? 'UPI' : 
+                         order.payment.method) : 
+                        (order.paymentMethod === 'cod' ? 'Cash on Delivery' : 
+                         order.paymentMethod === 'card' ? 'Credit/Debit Card' : 
+                         order.paymentMethod === 'upi' ? 'UPI' : 
+                         order.paymentMethod || 'Cash on Delivery')}
+                    </span>
+                    {order.payment?.gateway && (
+                      <span className="ml-1 text-xs text-gray-400">via {order.payment.gateway}</span>
+                    )}
                   </p>
                   <p className="mt-1 text-sm text-gray-500">
-                    Payment Status: <span className="font-medium text-yellow-600">Pending</span>
+                    Payment Status: <span className={`font-medium ${order.payment?.status === 'paid' || order.payment?.status === 'captured' ? 'text-green-600' : 
+                      (order.payment?.status === 'failed' || order.payment?.status === 'payment_failed') ? 'text-red-600' : 
+                      (order.payment?.status === 'refunded' || order.payment?.status === 'refund_initiated') ? 'text-purple-600' : 'text-yellow-600'}`}>
+                      {order.payment?.status === 'paid' || order.payment?.status === 'captured' ? 'Paid' : 
+                       order.payment?.status === 'authorized' ? 'Authorized' : 
+                       order.payment?.status === 'failed' || order.payment?.status === 'payment_failed' ? 'Failed' : 
+                       order.payment?.status === 'refunded' ? 'Refunded' : 
+                       order.payment?.status === 'refund_initiated' ? 'Refund in Process' : 
+                       order.payment?.status === 'pending' || order.payment?.status === 'payment_pending' ? 'Pending' : 
+                       order.paymentStatus === 'paid' ? 'Paid' : 
+                       order.paymentStatus === 'pending' ? 'Pending' : 'Pending'}
+                    </span>
                   </p>
+                  
+                  {/* Show payment instructions for pending online payments */}
+                  {((order.payment?.method === 'card' || order.payment?.method === 'upi' || 
+                     order.paymentMethod === 'card' || order.paymentMethod === 'upi') && 
+                    (order.payment?.status === 'pending' || order.payment?.status === 'payment_pending' || 
+                     order.paymentStatus === 'pending')) && (
+                    <div className="mt-3 p-3 bg-blue-50 rounded-md">
+                      <p className="text-sm text-blue-700">
+                        <FiAlertCircle className="inline-block mr-2" />
+                        Your payment is being processed. If you closed the payment window, you can try again from your account orders page.
+                      </p>
+                    </div>
+                  )}
+                  
+                  {/* Show payment failure message */}
+                  {(order.payment?.status === 'failed' || order.payment?.status === 'payment_failed' || 
+                    order.paymentStatus === 'failed') && (
+                    <div className="mt-3 p-3 bg-red-50 rounded-md">
+                      <p className="text-sm text-red-700">
+                        <FiAlertCircle className="inline-block mr-2" />
+                        Your payment failed. Please try again from your account orders page or contact support.
+                      </p>
+                    </div>
+                  )}
                 </div>
                 
                 {/* Shipping Details */}
@@ -315,4 +374,4 @@ const OrderConfirmation = () => {
   );
 };
 
-export default OrderConfirmation; 
+export default OrderConfirmation;

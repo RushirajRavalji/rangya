@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
+import Head from 'next/head';
 import { useAuth } from '../../contexts/AuthContext';
 import { db } from '../../utils/firebase';
 import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
-import AccountLayout from '../../components/layout/AccountLayout';
 import { FiShield } from 'react-icons/fi';
 
 export default function Account() {
@@ -52,7 +52,12 @@ export default function Account() {
   }
 
   return (
-    <AccountLayout title="Account Overview">
+    <div className="container mx-auto px-4 py-8">
+      <Head>
+        <title>Account Overview | Rangya</title>
+        <meta name="description" content="View your account information and recent orders" />
+      </Head>
+      
       {/* Admin Panel Access Button */}
       {userRole === 'admin' && (
         <div className="bg-indigo-deep text-white rounded-lg shadow-md p-6 mb-6">
@@ -152,6 +157,6 @@ export default function Account() {
           </div>
         )}
       </div>
-    </AccountLayout>
+    </div>
   );
 }

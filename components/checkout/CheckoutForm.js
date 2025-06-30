@@ -1,4 +1,4 @@
-﻿// Checkout Form Component
+// Checkout Form Component
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { FiAlertCircle, FiCheck, FiChevronRight, FiLoader, FiMapPin, FiPhone, FiUser, FiMail, FiCreditCard } from 'react-icons/fi';
@@ -10,8 +10,12 @@ import { db } from '../../utils/firebase';
 import Button from '../common/Button';
 import LoadingSpinner from '../common/LoadingSpinner';
 import { fetchCsrfToken } from '../../utils/csrf';
+import { reserveStock, releaseStockReservation } from '../../utils/productService';
+import { validateForm as validateFormFields } from '../../utils/validationUtils';
+import { placeOrder } from '../../utils/orderUtils';
+import { loadRazorpayScript, isRazorpayAvailable, createRazorpayInstance } from '../../utils/razorpayLoader';
 
-const CheckoutForm = ({ onOrderPlaced }) => {
+const CheckoutForm = ({ onOrderPlaced, onError }) => {
   const router = useRouter();
   const { currentUser } = useAuth();
   const { cartItems, total, clearCart, validateStock } = useCart();
@@ -19,30 +23,25 @@ const CheckoutForm = ({ onOrderPlaced }) => {
 
   // Form state
   const [formData, setFormData] = useState({
-    fullName: '',
+    customerName: '',
     email: '',
     phone: '',
-    address: '',
-    city: '',
-    state: '',
-    postalCode: '',
-    paymentMethod: 'cod',
-    notes: '',
     shippingAddress: {
+      fullName: '',
+      flatNo: '',
+      buildingName: '',
       street: '',
+      landmark: '',
       city: '',
       state: '',
       postalCode: '',
       country: 'India',
+      phone: ''
     },
     billingAddressSameAsShipping: true,
-    billingAddress: {
-      street: '',
-      city: '',
-      state: '',
-      postalCode: '',
-      country: 'India',
-    },
+    billingAddress: {},
+    paymentMethod: 'cod',
+    notes: ''
   });
 
   // UI state
@@ -85,18 +84,29 @@ const CheckoutForm = ({ onOrderPlaced }) => {
           if (userData.shippingInfo) {
             setFormData(prev => ({
               ...prev,
-              fullName: userData.shippingInfo.fullName || userData.displayName || currentUser.displayName || prev.fullName,
+              customerName: userData.shippingInfo.fullName || userData.displayName || currentUser.displayName || prev.customerName,
               phone: userData.shippingInfo.phone || prev.phone,
-              address: userData.shippingInfo.address || prev.address,
-              city: userData.shippingInfo.city || prev.city,
-              state: userData.shippingInfo.state || prev.state,
-              postalCode: userData.shippingInfo.postalCode || prev.postalCode
+              shippingAddress: {
+                ...prev.shippingAddress,
+                fullName: userData.shippingInfo.fullName || userData.shippingInfo.name || prev.shippingAddress.fullName,
+                flatNo: userData.shippingInfo.flatNo || prev.shippingAddress.flatNo,
+                buildingName: userData.shippingInfo.buildingName || prev.shippingAddress.buildingName,
+                street: userData.shippingInfo.address || prev.shippingAddress.street,
+                landmark: userData.shippingInfo.landmark || prev.shippingAddress.landmark,
+                city: userData.shippingInfo.city || prev.shippingAddress.city,
+                state: userData.shippingInfo.state || prev.shippingAddress.state,
+                postalCode: userData.shippingInfo.postalCode || prev.shippingAddress.postalCode,
+                country: userData.shippingInfo.country || prev.shippingAddress.country,
+                phone: userData.shippingInfo.phone || prev.shippingAddress.phone
+              },
+              billingAddressSameAsShipping: userData.shippingInfo.sameAsShipping || true,
+              billingAddress: userData.shippingInfo.sameAsShipping ? userData.shippingInfo : {}
             }));
           } else if (userData.displayName || currentUser.displayName) {
             // Otherwise just use the display name if available
             setFormData(prev => ({
               ...prev,
-              fullName: userData.displayName || currentUser.displayName || prev.fullName
+              customerName: userData.displayName || currentUser.displayName || prev.customerName
             }));
           }
         } else {
@@ -104,7 +114,7 @@ const CheckoutForm = ({ onOrderPlaced }) => {
           if (currentUser.displayName) {
             setFormData(prev => ({
               ...prev,
-              fullName: currentUser.displayName || prev.fullName
+              customerName: currentUser.displayName || prev.customerName
             }));
           }
         }
@@ -159,53 +169,60 @@ const CheckoutForm = ({ onOrderPlaced }) => {
     }
   };
   
+  // Handle shipping address change
+  const handleShippingAddressChange = (field, value) => {
+    setFormData(prev => ({
+      ...prev,
+      shippingAddress: {
+        ...prev.shippingAddress,
+        [field]: value
+      }
+    }));
+  };
+  
   // Validate form
   const validateForm = () => {
-    const newErrors = {};
+    // Define validation schema based on current step
+    let validationSchema = {};
     
-    // Validate based on current step
     if (formStep === 1) {
-      // Customer information validation
-      if (!formData.fullName.trim()) newErrors.fullName = 'Name is required';
-      if (!formData.email.trim()) {
-        newErrors.email = 'Email is required';
-      } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
-        newErrors.email = 'Please enter a valid email address';
-      }
-      if (!formData.phone.trim()) {
-        newErrors.phone = 'Phone number is required';
-      } else if (!/^\d{10}$/.test(formData.phone.replace(/\D/g, ''))) {
-        newErrors.phone = 'Please enter a valid 10-digit phone number';
-      }
+      // Customer information validation schema
+      validationSchema = {
+        customerName: { required: true, label: 'Full Name' },
+        email: { required: true, type: 'email', label: 'Email Address' },
+        phone: { required: true, type: 'phone', label: 'Phone Number' }
+      };
     } else if (formStep === 2) {
-      // Shipping address validation
-      if (!formData.shippingAddress.street.trim()) newErrors['shippingAddress.street'] = 'Street address is required';
-      if (!formData.shippingAddress.city.trim()) newErrors['shippingAddress.city'] = 'City is required';
-      if (!formData.shippingAddress.state.trim()) newErrors['shippingAddress.state'] = 'State is required';
-      if (!formData.shippingAddress.postalCode.trim()) {
-        newErrors['shippingAddress.postalCode'] = 'Postal code is required';
-      } else if (!/^\d{6}$/.test(formData.shippingAddress.postalCode.replace(/\D/g, ''))) {
-        newErrors['shippingAddress.postalCode'] = 'Please enter a valid 6-digit postal code';
-      }
+      // Shipping address validation schema
+      validationSchema = {
+        'shippingAddress.street': { required: true, label: 'Street Address' },
+        'shippingAddress.city': { required: true, label: 'City' },
+        'shippingAddress.state': { required: true, label: 'State' },
+        'shippingAddress.postalCode': { required: true, type: 'postalCode', label: 'Postal Code' }
+      };
       
-      // Validate billing address if different from shipping
+      // Add billing address validation if different from shipping
       if (!formData.billingAddressSameAsShipping) {
-        if (!formData.billingAddress.street.trim()) newErrors['billingAddress.street'] = 'Street address is required';
-        if (!formData.billingAddress.city.trim()) newErrors['billingAddress.city'] = 'City is required';
-        if (!formData.billingAddress.state.trim()) newErrors['billingAddress.state'] = 'State is required';
-        if (!formData.billingAddress.postalCode.trim()) {
-          newErrors['billingAddress.postalCode'] = 'Postal code is required';
-        } else if (!/^\d{6}$/.test(formData.billingAddress.postalCode.replace(/\D/g, ''))) {
-          newErrors['billingAddress.postalCode'] = 'Please enter a valid 6-digit postal code';
-        }
+        validationSchema = {
+          ...validationSchema,
+          'billingAddress.street': { required: true, label: 'Billing Street Address' },
+          'billingAddress.city': { required: true, label: 'Billing City' },
+          'billingAddress.state': { required: true, label: 'Billing State' },
+          'billingAddress.postalCode': { required: true, type: 'postalCode', label: 'Billing Postal Code' }
+        };
       }
     } else if (formStep === 3) {
-      // Payment method validation
-      if (!formData.paymentMethod) newErrors.paymentMethod = 'Please select a payment method';
+      // Payment method validation schema
+      validationSchema = {
+        paymentMethod: { required: true, label: 'Payment Method' }
+      };
     }
     
+    // Validate using our utility
+    const { errors: newErrors, isValid } = validateFormFields(formData, validationSchema);
+    
     setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    return isValid;
   };
   
   // Handle form navigation
@@ -226,29 +243,101 @@ const CheckoutForm = ({ onOrderPlaced }) => {
     e.preventDefault();
     
     if (!validateForm()) {
+      console.log('Form validation failed');
       return;
     }
     
     if (cartItems.length === 0) {
       showNotification('Your cart is empty', 'error');
+      console.log('Cart is empty');
       return;
     }
     
     try {
       setIsSubmitting(true);
+      console.log('Starting order submission process');
       
-      // TEMPORARILY DISABLED CSRF TOKEN FETCH
+      // Validate stock and create reservations
+      setStockValidating(true);
+      console.log('Validating stock and creating reservations');
+      
+      // Generate a session ID for this checkout
+      const sessionId = currentUser ? currentUser.uid : `anon-${Date.now()}`;
+      console.log('Session ID for checkout:', sessionId);
+      
+      // Reserve stock for each item
+      const reservationPromises = cartItems.map(async (item) => {
+        const reservation = await reserveStock(item.id, item.size, item.quantity, sessionId);
+        
+        if (!reservation.success) {
+          console.log(`Stock reservation failed for item ${item.name} (${item.size}):`, reservation.message);
+          return {
+            success: false,
+            productId: item.id,
+            name: item.name,
+            size: item.size,
+            message: reservation.message
+          };
+        }
+        
+        return {
+          success: true,
+          productId: item.id,
+          reservationId: reservation.reservationId,
+          expiresAt: reservation.expiresAt
+        };
+      });
+      
+      const reservationResults = await Promise.all(reservationPromises);
+      const failedReservations = reservationResults.filter(r => !r.success);
+      
+      if (failedReservations.length > 0) {
+        // Some reservations failed
+        setStockErrors(failedReservations.map(r => `${r.name} (${r.size}): ${r.message}`));
+        setStockValidating(false);
+        setIsSubmitting(false);
+        console.log('Stock reservation failed for some items:', failedReservations);
+        onError('Stock reservation failed for some items. Please check availability.');
+        return;
+      }
+      
+      setStockValidating(false);
+      console.log('Stock validation and reservation successful');
+      
       // Get CSRF token
-      // const csrfToken = await fetchCsrfToken();
+      console.log('Fetching CSRF token...');
+      let csrfToken = null;
+      let retryCount = 0;
+      const maxRetries = 3;
       
-      // if (!csrfToken) {
-      //   throw new Error('Could not get security token. Please refresh the page and try again.');
-      // }
+      while (!csrfToken && retryCount < maxRetries) {
+        try {
+          csrfToken = await fetchCsrfToken();
+          console.log('CSRF token received:', csrfToken ? 'Yes' : 'No');
+          
+          if (!csrfToken) {
+            retryCount++;
+            console.log(`CSRF token fetch failed, retrying (${retryCount}/${maxRetries})...`);
+            // Wait with increasing backoff
+            await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+          }
+        } catch (error) {
+          console.error('Error fetching CSRF token:', error);
+          retryCount++;
+          await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+        }
+      }
+      
+      if (!csrfToken) {
+        console.error('Failed to get CSRF token after retries');
+        onError('Could not get security token. Please refresh the page and try again.');
+        throw new Error('Could not get security token. Please refresh the page and try again.');
+      }
       
       // Prepare order data
       const orderData = {
         customer: {
-          fullName: formData.fullName,
+          fullName: formData.customerName,
           email: formData.email,
           phone: formData.phone
         },
@@ -275,37 +364,255 @@ const CheckoutForm = ({ onOrderPlaced }) => {
         subtotal: total,
         tax: Math.round(total * 0.18 * 100) / 100, // 18% tax
         shippingCost: total > 1000 ? 0 : 100, // Free shipping over ₹1000
-        total: total + (total > 1000 ? 0 : 100) + Math.round(total * 0.18 * 100) / 100
-        // csrfToken: csrfToken // Include CSRF token in the request body
+        total: total + (total > 1000 ? 0 : 100) + Math.round(total * 0.18 * 100) / 100,
+        csrfToken: csrfToken, // Include CSRF token in the request body
+        stockReservations: reservationResults.filter(r => r.success).map(r => ({
+          productId: r.productId,
+          reservationId: r.reservationId
+        }))
       };
       
-      // Submit order to API
-      const response = await fetch('/api/orders/create', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-          // 'X-CSRF-Token': csrfToken // Also keep it in the header
-        },
-        body: JSON.stringify(orderData),
-        credentials: 'include' // Important for cookies
-      });
+      console.log('Submitting order with data:', orderData);
       
-      const result = await response.json();
+      // Handle different payment methods
+       if (formData.paymentMethod === 'card' || formData.paymentMethod === 'upi') {
+         // Load Razorpay script if not already loaded
+         const razorpayLoadResult = await loadRazorpayScript();
+         
+         // Check if Razorpay is available in the environment
+         if (!razorpayLoadResult.success) {
+           showNotification(`Payment gateway could not be loaded: ${razorpayLoadResult.error || 'Unknown error'}. Please try again later or choose Cash on Delivery.`, 'error');
+           setIsSubmitting(false);
+           return;
+         }
+         
+         // Double-check that Razorpay is available
+         if (!isRazorpayAvailable()) {
+           showNotification('Payment gateway is not available after loading. Please try again later or choose Cash on Delivery.', 'error');
+           setIsSubmitting(false);
+           return;
+         }
+        
+        // Prepare order data for placeOrder function
+        const placeOrderData = {
+          userId: currentUser.uid,
+          shippingAddress: formData.shippingAddress,
+          items: cartItems.map(item => ({
+            id: item.id,
+            name: item.name,
+            size: item.size,
+            quantity: item.quantity,
+            price: item.price,
+            image: item.image
+          })),
+          paymentMethod: formData.paymentMethod,
+          subtotal: total,
+          shippingFee: total > 1000 ? 0 : 100, // Free shipping over ₹1000
+          tax: Math.round(total * 0.18 * 100) / 100, // 18% tax
+          totalAmount: total + (total > 1000 ? 0 : 100) + Math.round(total * 0.18 * 100) / 100
+        };
+        
+        // Place the order using the placeOrder function
+        const result = await placeOrder(placeOrderData);
+        
+        if (!result.success) {
+          onError(result.message || 'Failed to create order. Please try again.');
+          throw new Error(result.message || 'Failed to create order');
+        }
+        
+        // Initialize payment
+        try {
+          const paymentInitResponse = await fetch('/api/payments/initialize', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-CSRF-Token': csrfToken
+            },
+            body: JSON.stringify({
+              orderId: result.orderId,
+              amount: Math.round(placeOrderData.totalAmount * 100), // Convert to paise
+              paymentMethod: formData.paymentMethod,
+              currency: 'INR',
+              customerName: formData.customerName,
+              customerEmail: formData.email,
+              customerPhone: formData.phone,
+              vpa: '' // For UPI, if provided by user
+            })
+          });
+          
+          const paymentInitData = await paymentInitResponse.json();
+          
+          if (!paymentInitData.success) {
+            throw new Error(paymentInitData.message || 'Failed to initialize payment');
+          }
+          
+          // Create Razorpay options
+          const options = {
+            ...paymentInitData.data,
+            handler: async function(response) {
+              try {
+                // Verify payment
+                const verifyResponse = await fetch('/api/payments/verify', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': csrfToken
+                  },
+                  body: JSON.stringify({
+                    orderId: result.orderId,
+                    ...response
+                  })
+                });
+                
+                const verifyData = await verifyResponse.json();
+                
+                if (verifyData.success) {
+                  // Payment successful
+                  clearCart();
+                  
+                  // Call the onOrderPlaced callback if provided
+                  if (onOrderPlaced) {
+                    onOrderPlaced(result.orderId, result.orderNumber);
+                  }
+                  
+                  // Redirect to order confirmation page after order placement
+                  setIsPageLoading(true);
+                  router.push(`/order-confirmation?id=${result.orderId}`);
+                } else {
+                  throw new Error(verifyData.message || 'Payment verification failed');
+                }
+              } catch (error) {
+                console.error('Payment verification error:', error);
+                onError('Payment verification failed. Please contact support with your order ID.');
+                setIsSubmitting(false);
+              }
+            },
+            modal: {
+              ondismiss: function() {
+                console.log('Payment modal closed');
+                setIsSubmitting(false);
+              }
+            }
+          };
+          
+          // Create and open Razorpay payment form
+          try {
+            const razorpayInstance = createRazorpayInstance(options);
+            
+            if (!razorpayInstance) {
+              throw new Error('Failed to create Razorpay instance');
+            }
+            
+            razorpayInstance.open();
+          } catch (error) {
+            console.error('Error creating Razorpay instance:', error);
+            onError('Failed to open payment gateway. Please try again or choose Cash on Delivery.');
+            setIsSubmitting(false);
+          }
+          
+          // Release stock reservations as they're handled by the order
+          await Promise.all(
+            reservationResults
+              .filter(r => r.success)
+              .map(r => releaseStockReservation(r.productId, r.reservationId))
+          );
+          
+        } catch (error) {
+          console.error('Payment initialization error:', error);
+          onError('Failed to initialize payment. Please try again or choose Cash on Delivery.');
+          setIsSubmitting(false);
+        }
+      } else if (formData.paymentMethod === 'cod') {
+        // For Cash on Delivery
+        // Prepare order data for placeOrder function
+        const placeOrderData = {
+          userId: currentUser.uid,
+          shippingAddress: formData.shippingAddress,
+          items: cartItems.map(item => ({
+            id: item.id,
+            name: item.name,
+            size: item.size,
+            quantity: item.quantity,
+            price: item.price,
+            image: item.image
+          })),
+          paymentMethod: formData.paymentMethod,
+          subtotal: total,
+          shippingFee: total > 1000 ? 0 : 100, // Free shipping over ₹1000
+          tax: Math.round(total * 0.18 * 100) / 100, // 18% tax
+          totalAmount: total + (total > 1000 ? 0 : 100) + Math.round(total * 0.18 * 100) / 100
+        };
+        
+        // Place the order using the placeOrder function
+        const result = await placeOrder(placeOrderData);
+        
+        // Release stock reservations as they're no longer needed (placeOrder handles inventory)
+        await Promise.all(
+          reservationResults
+            .filter(r => r.success)
+            .map(r => releaseStockReservation(r.productId, r.reservationId))
+        );
+        
+        if (!result.success) {
+          onError(result.message || 'Failed to create order. Please try again.');
+          throw new Error(result.message || 'Failed to create order');
+        }
+        
+        // Create a result object similar to the API response
+        const orderResult = {
+          orderId: result.orderId,
+          orderNumber: `RNG-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(1000 + Math.random() * 9000)}`,
+          status: 'pending',
+          message: 'Order created successfully'
+        }
+        console.log('Order created successfully:', orderResult);
+        
+        // Order created successfully
+        clearCart();
+        
+        // Call the onOrderPlaced callback if provided
+        if (onOrderPlaced) {
+          onOrderPlaced(orderResult.orderId, orderResult.orderNumber);
+        }
+        
+        // Redirect to order confirmation page after order placement
+        setIsPageLoading(true);
+        router.push(`/order-confirmation?id=${orderResult.orderId}`);
+      } else {
+        // Invalid payment method
+        showNotification('Invalid payment method. Please select a valid payment method.', 'error');
+        setIsSubmitting(false);
+      }
       
-      if (!response.ok) {
+      if (!result.success) {
+        onError(result.message || 'Failed to create order. Please try again.');
         throw new Error(result.message || 'Failed to create order');
       }
+      
+      // Create a result object similar to the API response
+      const orderResult = {
+        orderId: result.orderId,
+        orderNumber: `RNG-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(1000 + Math.random() * 9000)}`,
+        status: 'pending',
+        message: 'Order created successfully'
+      }
+      console.log('Order created successfully:', orderResult);
       
       // Order created successfully
       clearCart();
       
-      // Redirect to order confirmation page
+      // Call the onOrderPlaced callback if provided
+      if (onOrderPlaced) {
+        onOrderPlaced(orderResult.orderId, orderResult.orderNumber);
+      }
+      
+      // Redirect to order confirmation page after order placement
       setIsPageLoading(true);
-      router.push(`/order-confirmation?orderId=${result.orderId}&orderNumber=${result.orderNumber}`);
+      router.push(`/order-confirmation?id=${orderResult.orderId}`);
       
     } catch (error) {
       console.error('Error creating order:', error);
-      showNotification(error.message || 'Failed to process your order. Please try again.', 'error');
+      onError(error.message || 'Failed to process your order. Please try again.');
       setIsSubmitting(false);
     }
   };
@@ -326,20 +633,20 @@ const CheckoutForm = ({ onOrderPlaced }) => {
             </h2>
             
             <div>
-              <label htmlFor="fullName" className="block text-sm font-medium text-gray-700">
+              <label htmlFor="customerName" className="block text-sm font-medium text-gray-700">
                 Full Name
               </label>
               <input
                 type="text"
-                id="fullName"
-                name="fullName"
-                value={formData.fullName}
-                onChange={handleChange}
+                id="customerName"
+                name="customerName"
+                value={formData.customerName}
+                onChange={e => handleShippingAddressChange('fullName', e.target.value)}
                 className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 ${
-                  errors.fullName ? 'border-red-500' : ''
+                  errors.customerName ? 'border-red-500' : ''
                 }`}
               />
-              {errors.fullName && <p className="mt-1 text-sm text-red-600">{errors.fullName}</p>}
+              {errors.customerName && <p className="mt-1 text-sm text-red-600">{errors.customerName}</p>}
             </div>
             
             <div>
@@ -355,7 +662,7 @@ const CheckoutForm = ({ onOrderPlaced }) => {
                   id="email"
                   name="email"
                   value={formData.email}
-                  onChange={handleChange}
+                  onChange={e => handleShippingAddressChange('email', e.target.value)}
                   className={`block w-full rounded-none rounded-r-md border-gray-300 focus:border-indigo-500 focus:ring-indigo-500 ${
                     errors.email ? 'border-red-500' : ''
                   }`}
@@ -377,10 +684,13 @@ const CheckoutForm = ({ onOrderPlaced }) => {
                   id="phone"
                   name="phone"
                   value={formData.phone}
-                  onChange={handleChange}
+                  onChange={e => setFormData(prev => ({ ...prev, phone: e.target.value }))}
                   className={`block w-full rounded-none rounded-r-md border-gray-300 focus:border-indigo-500 focus:ring-indigo-500 ${
                     errors.phone ? 'border-red-500' : ''
                   }`}
+                  pattern="[0-9]*"
+                  inputMode="numeric"
+                  maxLength="10"
                   placeholder="10-digit number"
                 />
               </div>
@@ -405,113 +715,161 @@ const CheckoutForm = ({ onOrderPlaced }) => {
               <FiMapPin className="mr-2" /> Shipping Address
             </h2>
             
-            <div>
-              <label htmlFor="shippingAddress.street" className="block text-sm font-medium text-gray-700">
-                Street Address
-              </label>
-              <input
-                type="text"
-                id="shippingAddress.street"
-                name="shippingAddress.street"
-                value={formData.shippingAddress.street}
-                onChange={handleChange}
-                className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 ${
-                  errors['shippingAddress.street'] ? 'border-red-500' : ''
-                }`}
-              />
-              {errors['shippingAddress.street'] && (
-                <p className="mt-1 text-sm text-red-600">{errors['shippingAddress.street']}</p>
-              )}
-            </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label htmlFor="shippingAddress.city" className="block text-sm font-medium text-gray-700">
-                  City
-                </label>
-                <input
-                  type="text"
-                  id="shippingAddress.city"
-                  name="shippingAddress.city"
-                  value={formData.shippingAddress.city}
-                  onChange={handleChange}
-                  className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 ${
-                    errors['shippingAddress.city'] ? 'border-red-500' : ''
-                  }`}
-                />
-                {errors['shippingAddress.city'] && (
-                  <p className="mt-1 text-sm text-red-600">{errors['shippingAddress.city']}</p>
-                )}
+            <div className="mb-6">
+              <h2 className="text-lg font-medium text-gray-900 mb-4">Shipping Address</h2>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="col-span-2">
+                  <label htmlFor="fullName" className="block text-sm font-medium text-gray-700 mb-1">Full Name *</label>
+                  <input
+                    type="text"
+                    id="fullName"
+                    name="fullName"
+                    value={formData.shippingAddress.fullName || ''}
+                    onChange={e => handleShippingAddressChange('fullName', e.target.value)}
+                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                    required
+                  />
+                </div>
+                
+                <div>
+                  <label htmlFor="flatNo" className="block text-sm font-medium text-gray-700 mb-1">Flat/House No. *</label>
+                  <input
+                    type="text"
+                    id="flatNo"
+                    name="flatNo"
+                    value={formData.shippingAddress.flatNo || ''}
+                    onChange={e => handleShippingAddressChange('flatNo', e.target.value)}
+                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                    required
+                  />
+                </div>
+                
+                <div>
+                  <label htmlFor="buildingName" className="block text-sm font-medium text-gray-700 mb-1">Building/Society Name</label>
+                  <input
+                    type="text"
+                    id="buildingName"
+                    name="buildingName"
+                    value={formData.shippingAddress.buildingName || ''}
+                    onChange={e => handleShippingAddressChange('buildingName', e.target.value)}
+                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                  />
+                </div>
+                
+                <div className="col-span-2">
+                  <label htmlFor="street" className="block text-sm font-medium text-gray-700 mb-1">Street/Area *</label>
+                  <input
+                    type="text"
+                    id="street"
+                    name="street"
+                    value={formData.shippingAddress.street || ''}
+                    onChange={e => handleShippingAddressChange('street', e.target.value)}
+                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                    required
+                  />
+                </div>
+                
+                <div className="col-span-2">
+                  <label htmlFor="landmark" className="block text-sm font-medium text-gray-700 mb-1">Landmark</label>
+                  <input
+                    type="text"
+                    id="landmark"
+                    name="landmark"
+                    value={formData.shippingAddress.landmark || ''}
+                    onChange={e => handleShippingAddressChange('landmark', e.target.value)}
+                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                    placeholder="E.g., Near Post Office"
+                  />
+                </div>
+                
+                <div>
+                  <label htmlFor="city" className="block text-sm font-medium text-gray-700 mb-1">City *</label>
+                  <input
+                    type="text"
+                    id="city"
+                    name="city"
+                    value={formData.shippingAddress.city || ''}
+                    onChange={e => handleShippingAddressChange('city', e.target.value)}
+                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                    required
+                  />
+                </div>
+                
+                <div>
+                  <label htmlFor="state" className="block text-sm font-medium text-gray-700 mb-1">State *</label>
+                  <input
+                    type="text"
+                    id="state"
+                    name="state"
+                    value={formData.shippingAddress.state || ''}
+                    onChange={e => handleShippingAddressChange('state', e.target.value)}
+                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                    required
+                  />
+                </div>
+                
+                <div>
+                  <label htmlFor="postalCode" className="block text-sm font-medium text-gray-700 mb-1">Postal Code *</label>
+                  <input
+                    type="text"
+                    id="postalCode"
+                    name="postalCode"
+                    value={formData.shippingAddress.postalCode || ''}
+                    onChange={e => handleShippingAddressChange('postalCode', e.target.value)}
+                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                    required
+                  />
+                </div>
+                
+                <div>
+                  <label htmlFor="country" className="block text-sm font-medium text-gray-700 mb-1">Country *</label>
+                  <select
+                    id="country"
+                    name="country"
+                    value={formData.shippingAddress.country || 'India'}
+                    onChange={e => handleShippingAddressChange('country', e.target.value)}
+                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                    required
+                  >
+                    <option value="India">India</option>
+                    <option value="United States">United States</option>
+                    <option value="United Kingdom">United Kingdom</option>
+                    <option value="Canada">Canada</option>
+                    <option value="Australia">Australia</option>
+                  </select>
+                </div>
+                
+                <div className="col-span-2">
+                  <label htmlFor="phone" className="block text-sm font-medium text-gray-700 mb-1">Phone Number *</label>
+                  <input
+                    type="tel"
+                    id="phone"
+                    name="phone"
+                    value={formData.shippingAddress.phone || ''}
+                    onChange={e => handleShippingAddressChange('phone', e.target.value)}
+                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                    pattern="[0-9]*"
+                    inputMode="numeric"
+                    maxLength="10"
+                    placeholder="10-digit number"
+                    required
+                  />
+                </div>
               </div>
               
-              <div>
-                <label htmlFor="shippingAddress.state" className="block text-sm font-medium text-gray-700">
-                  State
-                </label>
-                <input
-                  type="text"
-                  id="shippingAddress.state"
-                  name="shippingAddress.state"
-                  value={formData.shippingAddress.state}
-                  onChange={handleChange}
-                  className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 ${
-                    errors['shippingAddress.state'] ? 'border-red-500' : ''
-                  }`}
-                />
-                {errors['shippingAddress.state'] && (
-                  <p className="mt-1 text-sm text-red-600">{errors['shippingAddress.state']}</p>
-                )}
-              </div>
-            </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label htmlFor="shippingAddress.postalCode" className="block text-sm font-medium text-gray-700">
-                  Postal Code
-                </label>
-                <input
-                  type="text"
-                  id="shippingAddress.postalCode"
-                  name="shippingAddress.postalCode"
-                  value={formData.shippingAddress.postalCode}
-                  onChange={handleChange}
-                  className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 ${
-                    errors['shippingAddress.postalCode'] ? 'border-red-500' : ''
-                  }`}
-                />
-                {errors['shippingAddress.postalCode'] && (
-                  <p className="mt-1 text-sm text-red-600">{errors['shippingAddress.postalCode']}</p>
-                )}
-              </div>
-              
-              <div>
-                <label htmlFor="shippingAddress.country" className="block text-sm font-medium text-gray-700">
-                  Country
-                </label>
-                <select
-                  id="shippingAddress.country"
-                  name="shippingAddress.country"
-                  value={formData.shippingAddress.country}
-                  onChange={handleChange}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                >
-                  <option value="India">India</option>
-                </select>
-              </div>
-            </div>
-            
-            <div className="mt-6">
-              <div className="flex items-center">
-                <input
-                  type="checkbox"
-                  id="billingAddressSameAsShipping"
-                  name="billingAddressSameAsShipping"
-                  checked={formData.billingAddressSameAsShipping}
-                  onChange={handleChange}
-                  className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
-                />
-                <label htmlFor="billingAddressSameAsShipping" className="ml-2 block text-sm text-gray-700">
-                  Billing address same as shipping address
+              <div className="mt-4">
+                <label className="inline-flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={formData.billingAddressSameAsShipping}
+                    onChange={() => setFormData(prev => ({
+                      ...prev,
+                      billingAddressSameAsShipping: !prev.billingAddressSameAsShipping
+                    }))}
+                    className="form-checkbox h-4 w-4 text-indigo-600"
+                  />
+                  <span className="ml-2 text-sm text-gray-700">Billing address same as shipping address</span>
                 </label>
               </div>
             </div>
@@ -529,14 +887,12 @@ const CheckoutForm = ({ onOrderPlaced }) => {
                     id="billingAddress.street"
                     name="billingAddress.street"
                     value={formData.billingAddress.street}
-                    onChange={handleChange}
+                    onChange={e => handleShippingAddressChange('street', e.target.value)}
                     className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 ${
                       errors['billingAddress.street'] ? 'border-red-500' : ''
                     }`}
                   />
-                  {errors['billingAddress.street'] && (
-                    <p className="mt-1 text-sm text-red-600">{errors['billingAddress.street']}</p>
-                  )}
+                  {errors['billingAddress.street'] && <p className="mt-1 text-sm text-red-600">{errors['billingAddress.street']}</p>}
                 </div>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -549,14 +905,12 @@ const CheckoutForm = ({ onOrderPlaced }) => {
                       id="billingAddress.city"
                       name="billingAddress.city"
                       value={formData.billingAddress.city}
-                      onChange={handleChange}
+                      onChange={e => handleShippingAddressChange('city', e.target.value)}
                       className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 ${
                         errors['billingAddress.city'] ? 'border-red-500' : ''
                       }`}
                     />
-                    {errors['billingAddress.city'] && (
-                      <p className="mt-1 text-sm text-red-600">{errors['billingAddress.city']}</p>
-                    )}
+                    {errors['billingAddress.city'] && <p className="mt-1 text-sm text-red-600">{errors['billingAddress.city']}</p>}
                   </div>
                   
                   <div>
@@ -568,14 +922,12 @@ const CheckoutForm = ({ onOrderPlaced }) => {
                       id="billingAddress.state"
                       name="billingAddress.state"
                       value={formData.billingAddress.state}
-                      onChange={handleChange}
+                      onChange={e => handleShippingAddressChange('state', e.target.value)}
                       className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 ${
                         errors['billingAddress.state'] ? 'border-red-500' : ''
                       }`}
                     />
-                    {errors['billingAddress.state'] && (
-                      <p className="mt-1 text-sm text-red-600">{errors['billingAddress.state']}</p>
-                    )}
+                    {errors['billingAddress.state'] && <p className="mt-1 text-sm text-red-600">{errors['billingAddress.state']}</p>}
                   </div>
                 </div>
                 
@@ -589,14 +941,12 @@ const CheckoutForm = ({ onOrderPlaced }) => {
                       id="billingAddress.postalCode"
                       name="billingAddress.postalCode"
                       value={formData.billingAddress.postalCode}
-                      onChange={handleChange}
+                      onChange={e => handleShippingAddressChange('postalCode', e.target.value)}
                       className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 ${
                         errors['billingAddress.postalCode'] ? 'border-red-500' : ''
                       }`}
                     />
-                    {errors['billingAddress.postalCode'] && (
-                      <p className="mt-1 text-sm text-red-600">{errors['billingAddress.postalCode']}</p>
-                    )}
+                    {errors['billingAddress.postalCode'] && <p className="mt-1 text-sm text-red-600">{errors['billingAddress.postalCode']}</p>}
                   </div>
                   
                   <div>
@@ -607,7 +957,7 @@ const CheckoutForm = ({ onOrderPlaced }) => {
                       id="billingAddress.country"
                       name="billingAddress.country"
                       value={formData.billingAddress.country}
-                      onChange={handleChange}
+                      onChange={e => handleShippingAddressChange('country', e.target.value)}
                       className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
                     >
                       <option value="India">India</option>
@@ -649,12 +999,51 @@ const CheckoutForm = ({ onOrderPlaced }) => {
                   type="radio"
                   value="cod"
                   checked={formData.paymentMethod === 'cod'}
-                  onChange={handleChange}
+                  onChange={e => handleShippingAddressChange('paymentMethod', e.target.value)}
                   className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300"
                 />
                 <label htmlFor="cod" className="ml-3 block text-sm font-medium text-gray-700">
                   Cash on Delivery
                 </label>
+              </div>
+              
+              <div className="flex items-center opacity-60">
+                <input
+                  id="card"
+                  name="paymentMethod"
+                  type="radio"
+                  value="card"
+                  checked={formData.paymentMethod === 'card'}
+                  onChange={e => handleShippingAddressChange('paymentMethod', e.target.value)}
+                  disabled
+                  className="h-4 w-4 text-gray-400 focus:ring-gray-300 border-gray-300 cursor-not-allowed"
+                />
+                <label htmlFor="card" className="ml-3 block text-sm font-medium text-gray-500 cursor-not-allowed">
+                  Credit/Debit Card (Coming Soon)
+                </label>
+              </div>
+              
+              <div className="flex items-center opacity-60">
+                <input
+                  id="upi"
+                  name="paymentMethod"
+                  type="radio"
+                  value="upi"
+                  checked={formData.paymentMethod === 'upi'}
+                  onChange={e => handleShippingAddressChange('paymentMethod', e.target.value)}
+                  disabled
+                  className="h-4 w-4 text-gray-400 focus:ring-gray-300 border-gray-300 cursor-not-allowed"
+                />
+                <label htmlFor="upi" className="ml-3 block text-sm font-medium text-gray-500 cursor-not-allowed">
+                  UPI (Coming Soon)
+                </label>
+              </div>
+              
+              <div className="mt-4 p-4 bg-blue-50 rounded-md">
+                <p className="text-sm text-blue-700">
+                  <FiAlertCircle className="inline-block mr-2" />
+                  Currently, only Cash on Delivery is available. Online payment options will be available soon.
+                </p>
               </div>
               
               {errors.paymentMethod && <p className="mt-1 text-sm text-red-600">{errors.paymentMethod}</p>}
@@ -668,7 +1057,7 @@ const CheckoutForm = ({ onOrderPlaced }) => {
                 Back
               </Button>
               <Button 
-                type="submit"
+                onClick={handleSubmit}
                 variant="primary"
                 isLoading={isSubmitting}
               >

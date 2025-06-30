@@ -9,10 +9,8 @@ import {
   FiPackage, 
   FiShoppingBag, 
   FiUsers, 
-  FiSettings, 
   FiLogOut,
-  FiGrid,
-  FiLayers
+  FiImage
 } from 'react-icons/fi';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNotification } from '../../contexts/NotificationContext';
@@ -41,11 +39,7 @@ export default function AdminLayout({ children, title }) {
   };
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      <Head>
-        <title>{title ? `${title} | Admin` : 'Admin Dashboard'} | Rangya</title>
-      </Head>
-
+    <div className="min-h-screen bg-gray-100 flex">
       {/* Mobile Sidebar Overlay */}
       {sidebarOpen && (
         <div 
@@ -56,7 +50,7 @@ export default function AdminLayout({ children, title }) {
 
       {/* Sidebar */}
       <div 
-        className={`fixed inset-y-0 left-0 z-50 w-64 bg-indigo-900 text-white transform transition-transform duration-300 ease-in-out lg:translate-x-0 ${
+        className={`fixed lg:static inset-y-0 left-0 z-50 w-64 bg-indigo-900 text-white transform transition-transform duration-300 ease-in-out lg:translate-x-0 ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
@@ -124,51 +118,6 @@ export default function AdminLayout({ children, title }) {
               
               <li>
                 <Link 
-                  href="/admin/bundles" 
-                  className={`flex items-center p-2 rounded-md ${
-                    isSectionActive('/admin/bundles') 
-                      ? 'bg-white text-indigo-deep' 
-                      : 'text-white hover:bg-indigo-800'
-                  }`}
-                  onClick={() => setSidebarOpen(false)}
-                >
-                  <FiLayers className="mr-3" />
-                  Bundles
-                </Link>
-              </li>
-              
-              <li>
-                <Link 
-                  href="/admin/categories" 
-                  className={`flex items-center p-2 rounded-md ${
-                    isSectionActive('/admin/categories') 
-                      ? 'bg-white text-indigo-deep' 
-                      : 'text-white hover:bg-indigo-800'
-                  }`}
-                  onClick={() => setSidebarOpen(false)}
-                >
-                  <FiGrid className="mr-3" />
-                  Categories
-                </Link>
-              </li>
-              
-              <li>
-                <Link 
-                  href="/admin/settings" 
-                  className={`flex items-center p-2 rounded-md ${
-                    isSectionActive('/admin/settings') 
-                      ? 'bg-white text-indigo-deep' 
-                      : 'text-white hover:bg-indigo-800'
-                  }`}
-                  onClick={() => setSidebarOpen(false)}
-                >
-                  <FiSettings className="mr-3" />
-                  Settings
-                </Link>
-              </li>
-              
-              <li>
-                <Link 
                   href="/admin/users" 
                   className={`flex items-center p-2 rounded-md ${
                     isSectionActive('/admin/users') 
@@ -179,6 +128,21 @@ export default function AdminLayout({ children, title }) {
                 >
                   <FiUsers className="mr-3" />
                   Users
+                </Link>
+              </li>
+              
+              <li>
+                <Link 
+                  href="/admin/carousel" 
+                  className={`flex items-center p-2 rounded-md ${
+                    isSectionActive('/admin/carousel') 
+                      ? 'bg-white text-indigo-deep' 
+                      : 'text-white hover:bg-indigo-800'
+                  }`}
+                  onClick={() => setSidebarOpen(false)}
+                >
+                  <FiImage className="mr-3" />
+                  Carousel
                 </Link>
               </li>
             </ul>
@@ -211,7 +175,7 @@ export default function AdminLayout({ children, title }) {
       </div>
 
       {/* Main Content */}
-      <div className="lg:pl-64">
+      <div className="flex-1 flex flex-col min-w-0">
         {/* Top Bar */}
         <header className="sticky top-0 z-30 bg-white shadow-sm h-16 flex items-center px-4">
           <button 
@@ -224,10 +188,10 @@ export default function AdminLayout({ children, title }) {
         </header>
 
         {/* Content */}
-        <main className="p-6">
+        <main className="flex-1 overflow-x-hidden overflow-y-auto p-4 md:p-6 lg:p-8">
           {children}
         </main>
       </div>
     </div>
   );
-} 
+}

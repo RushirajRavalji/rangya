@@ -1,167 +1,180 @@
-import { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import Image from 'next/image';
+import PropTypes from 'prop-types';
 import { FiImage } from 'react-icons/fi';
 
 /**
- * OptimizedImage component for efficient image loading with fallback
+ * OptimizedImage component for optimized image loading with modern formats
  * 
  * @param {Object} props - Component props
  * @param {string} props.src - Image source URL
- * @param {string} props.alt - Alternative text for the image
+ * @param {string} props.alt - Image alt text
  * @param {number} props.width - Image width
  * @param {number} props.height - Image height
  * @param {string} props.className - Additional CSS classes
- * @param {string} props.objectFit - CSS object-fit property
- * @param {string} props.objectPosition - CSS object-position property
- * @param {boolean} props.priority - Whether to prioritize loading this image
+ * @param {string} props.objectFit - Object fit property (cover, contain, etc.)
+ * @param {boolean} props.priority - Whether to prioritize loading
  * @param {string} props.quality - Image quality (1-100)
- * @param {boolean} props.unoptimized - Whether to skip optimization
- * @param {Function} props.onLoad - Callback when image loads successfully
- * @param {Function} props.onError - Callback when image fails to load
- * @param {string} props.placeholder - Placeholder type ('blur', 'empty', or React node)
- * @param {string} props.blurDataURL - Base64 encoded image data for blur placeholder
- * @returns {JSX.Element} Optimized image component
+ * @param {boolean} props.lazyLoad - Whether to lazy load the image
+ * @param {Array} props.sizes - Responsive sizes attribute
+ * @param {string} props.placeholder - Placeholder type ('blur' or 'empty')
+ * @param {string} props.blurDataURL - Data URL for blur placeholder
+ * @param {Object} props.imgProps - Additional props for the img element
+ * @returns {JSX.Element} - Rendered component
  */
 const OptimizedImage = ({
   src,
-  alt = '',
+  alt,
   width,
   height,
   className = '',
   objectFit = 'cover',
-  objectPosition = 'center',
   priority = false,
-  quality = 75,
-  unoptimized = false,
-  onLoad,
-  onError,
+  quality = 80,
+  lazyLoad = true,
+  sizes = '100vw',
   placeholder = 'empty',
   blurDataURL,
-  ...props
+  imgProps = {},
+  ...rest
 }) => {
-  const [isLoading, setIsLoading] = useState(true);
-  const [hasError, setHasError] = useState(false);
-  const [imageSrc, setImageSrc] = useState(src);
-  const [retryCount, setRetryCount] = useState(0);
-  const MAX_RETRIES = 2;
+  const [isError, setIsError] = useState(false);
+  const [isLoaded, setIsLoaded] = useState(false);
   
-  // Reset states when src changes
-  useEffect(() => {
-    setIsLoading(true);
-    setHasError(false);
-    setImageSrc(src);
-    setRetryCount(0);
-  }, [src]);
-  
-  // Handle image load success
-  const handleLoad = (e) => {
-    setIsLoading(false);
-    if (onLoad) onLoad(e);
-  };
+  // Default fallback image
+  const fallbackImage = '/images/placeholder.jpg';
   
   // Handle image load error
-  const handleError = (e) => {
-    // If we haven't exceeded retry attempts, try to load a smaller version
-    if (retryCount < MAX_RETRIES) {
-      setRetryCount(prev => prev + 1);
-      
-      // Try to use a smaller version if available
-      if (src?.includes('/products/') && !src.includes('-sm.')) {
-        const smallSrc = src.replace(/(\.\w+)$/, '-sm$1');
-        setImageSrc(smallSrc);
-        return;
-      }
+  const handleError = () => {
+    if (src !== fallbackImage) {
+      setIsError(true);
     }
-    
-    // If retries exceeded or no smaller version available
-    setIsLoading(false);
-    setHasError(true);
-    
-    // Use fallback image
-    setImageSrc('/images/placeholder.jpg');
-    
-    if (onError) onError(e);
   };
   
-  // Generate blur data URL for images without one
-  const getBlurDataURL = () => {
-    // If provided, use it
-    if (blurDataURL) return blurDataURL;
+  // Handle image load success
+  const handleLoad = () => {
+    setIsLoaded(true);
+  };
+  
+  // Determine image source
+  const imageSrc = isError ? fallbackImage : src;
+  
+  // Generate blur data URL for placeholder if not provided
+  const generatedBlurDataURL = blurDataURL || 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+P+/HgAFdwI2Q4tgFQAAAABJRU5ErkJggg==';
+  
+  // Determine if we should use blur placeholder
+  const usePlaceholder = placeholder === 'blur';
+  
+  // Check if the image is from Cloudinary
+  const isCloudinaryImage = typeof src === 'string' && src.includes('cloudinary.com');
+  
+  // Modify Cloudinary URLs to use modern formats and optimizations
+  let optimizedSrc = imageSrc;
+  if (isCloudinaryImage) {
+    // Extract base URL and transformations
+    const [baseUrl, query] = imageSrc.split('/upload/');
     
-    // Generate a simple blur data URL (light gray)
-    return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
-  };
-  
-  // Common image props
-  const imageProps = {
-    src: imageSrc,
-    alt,
-    width: width || (height ? undefined : 500),
-    height: height || (width ? undefined : 500),
-    layout: (!width && !height) ? 'fill' : 'intrinsic',
-    objectFit,
-    objectPosition,
-    priority,
-    loading: priority ? 'eager' : 'lazy',
-    quality,
-    onLoad: handleLoad,
-    onError: handleError,
-    unoptimized,
-    placeholder: placeholder === 'blur' ? 'blur' : undefined,
-    blurDataURL: placeholder === 'blur' ? getBlurDataURL() : undefined,
-    ...props
-  };
-  
-  // Placeholder shown while loading
-  const renderPlaceholder = () => (
-    <div 
-      className={`bg-gray-100 flex items-center justify-center ${className}`}
-      style={{ width: width || '100%', height: height || '100%' }}
-      aria-hidden="true"
-    >
-      <FiImage className="text-gray-400 w-8 h-8" />
-    </div>
-  );
-  
-  // Show placeholder while loading
-  if (isLoading && !priority && placeholder !== 'blur') {
-    return (
-      <div className="relative">
-        {renderPlaceholder()}
-        <div className="absolute inset-0 opacity-0">
-          <Image {...imageProps} />
-        </div>
-      </div>
-    );
+    // Add auto format and quality transformations if not already present
+    const hasFormat = query.includes('/f_auto/');
+    const hasQuality = query.includes('/q_auto/');
+    
+    let newTransformations = '';
+    if (!hasFormat) newTransformations += 'f_auto,';
+    if (!hasQuality) newTransformations += 'q_auto,';
+    
+    // Only modify URL if we have new transformations to add
+    if (newTransformations) {
+      optimizedSrc = `${baseUrl}/upload/${newTransformations}${query}`;
+    }
   }
-  
-  // Show error state
-  if (hasError) {
-    return (
-      <div className="relative" aria-label={`Failed to load image: ${alt}`}>
-        <Image 
-          {...imageProps}
-          className={`${className} ${hasError ? 'opacity-70' : ''}`}
-        />
-        <div className="absolute inset-0 flex items-center justify-center bg-gray-100 bg-opacity-30">
-          <FiImage className="text-gray-500 w-6 h-6" />
-        </div>
-      </div>
-    );
-  }
-  
-  // Show the image
+
   return (
-    <div className="relative">
-      <Image 
-        {...imageProps}
-        className={`${className} ${isLoading ? 'opacity-0' : 'opacity-100'} transition-opacity duration-300`}
+    <div
+      className={`image-container ${className} ${!isLoaded ? 'image-loading' : 'image-loaded'}`}
+      style={{
+        position: 'relative',
+        overflow: 'hidden',
+        width: width ? `${width}px` : '100%',
+        height: height ? `${height}px` : 'auto'
+      }}
+      {...rest}
+    >
+      <Image
+        src={optimizedSrc}
+        alt={alt || 'Image'}
+        width={width}
+        height={height}
+        quality={quality}
+        priority={priority}
+        loading={lazyLoad && !priority ? 'lazy' : undefined}
+        sizes={sizes}
+        placeholder={usePlaceholder ? 'blur' : 'empty'}
+        blurDataURL={usePlaceholder ? generatedBlurDataURL : undefined}
+        onError={handleError}
+        onLoad={handleLoad}
+        style={{
+          objectFit,
+          objectPosition: 'center',
+          transition: 'opacity 0.3s ease',
+          opacity: isLoaded ? 1 : 0
+        }}
+        {...imgProps}
       />
-      {isLoading && placeholder !== 'blur' && (
-        <div className="absolute inset-0 bg-gray-100 animate-pulse" />
+      
+      {/* Loading indicator */}
+      {!isLoaded && (
+        <div
+          className="image-placeholder"
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            background: '#f0f0f0',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}
+        >
+          {placeholder !== 'blur' && (
+            <svg
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+              className="animate-spin"
+            >
+              <circle cx="12" cy="12" r="10" stroke="#e2e8f0" strokeWidth="4" />
+              <path
+                d="M12 2C6.48 2 2 6.48 2 12"
+                stroke="#4a6cf7"
+                strokeWidth="4"
+                strokeLinecap="round"
+              />
+            </svg>
+          )}
+        </div>
       )}
     </div>
   );
+};
+
+OptimizedImage.propTypes = {
+  src: PropTypes.string.isRequired,
+  alt: PropTypes.string,
+  width: PropTypes.number,
+  height: PropTypes.number,
+  className: PropTypes.string,
+  objectFit: PropTypes.oneOf(['cover', 'contain', 'fill', 'none', 'scale-down']),
+  priority: PropTypes.bool,
+  quality: PropTypes.number,
+  lazyLoad: PropTypes.bool,
+  sizes: PropTypes.string,
+  placeholder: PropTypes.oneOf(['blur', 'empty']),
+  blurDataURL: PropTypes.string,
+  imgProps: PropTypes.object
 };
 
 export default OptimizedImage; 

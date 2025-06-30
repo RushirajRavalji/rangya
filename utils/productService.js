@@ -12,9 +12,12 @@ import {
   limit,
   startAfter,
   increment,
-  serverTimestamp
+  serverTimestamp,
+  runTransaction,
+  deleteField
 } from 'firebase/firestore';
 import { db } from './firebase';
+import { setCacheItem, getCacheItem, deleteCacheItem, cachedFunction } from './cacheUtils';
 
 // Collection references - initialize them when needed, not at module level
 const getProductsRef = () => {
@@ -165,10 +168,20 @@ export async function getProducts(options = {}) {
 /**
  * Get a product by ID
  * @param {string} productId - Product ID
+ * @param {boolean} bypassCache - Whether to bypass cache
  * @returns {Promise<Object|null>} - Product data or null if not found
  */
-export async function getProductById(productId) {
+export async function getProductById(productId, bypassCache = false) {
   try {
+    // Check cache first if not bypassing
+    if (!bypassCache) {
+      const cacheKey = `product:${productId}`;
+      const cachedProduct = getCacheItem(cacheKey);
+      if (cachedProduct) {
+        return cachedProduct;
+      }
+    }
+    
     if (!db) {
       console.error("Firestore database not initialized");
       return null;
@@ -180,7 +193,7 @@ export async function getProductById(productId) {
     
     if (docSnap.exists()) {
       const data = docSnap.data();
-      return {
+      const product = {
         id: docSnap.id,
         name_en: data.name_en || "Unnamed Product",
         price: data.price || 0,
@@ -189,6 +202,14 @@ export async function getProductById(productId) {
         stock: data.stock || {},
         ...data
       };
+      
+      // Cache the product for 5 minutes
+      if (!bypassCache) {
+        const cacheKey = `product:${productId}`;
+        setCacheItem(cacheKey, product, 300);
+      }
+      
+      return product;
     } else {
       console.log(`No product found with ID: ${productId}`);
       return null;
@@ -202,20 +223,42 @@ export async function getProductById(productId) {
 /**
  * Get a product by slug
  * @param {string} slug - Product slug
+ * @param {boolean} bypassCache - Whether to bypass cache
  * @returns {Promise<Object|null>} - Product data or null if not found
  */
-export async function getProductBySlug(slug) {
+export async function getProductBySlug(slug, bypassCache = false) {
   try {
+    // Check cache first if not bypassing
+    if (!bypassCache) {
+      const cacheKey = `product:slug:${slug}`;
+      const cachedProduct = getCacheItem(cacheKey);
+      if (cachedProduct) {
+        return cachedProduct;
+      }
+    }
+    
     const productsRef = getProductsRef();
     const q = query(productsRef, where('slug', '==', slug));
     const querySnapshot = await getDocs(q);
     
     if (!querySnapshot.empty) {
       const doc = querySnapshot.docs[0];
-      return {
+      const product = {
         id: doc.id,
         ...doc.data()
       };
+      
+      // Cache the product for 5 minutes
+      if (!bypassCache) {
+        const cacheKey = `product:slug:${slug}`;
+        setCacheItem(cacheKey, product, 300);
+        
+        // Also cache by ID for consistency
+        const idCacheKey = `product:${product.id}`;
+        setCacheItem(idCacheKey, product, 300);
+      }
+      
+      return product;
     } else {
       return null;
     }
@@ -428,22 +471,29 @@ export async function createProduct(productData) {
 }
 
 /**
- * Update an existing product
+ * Update a product
  * @param {string} productId - Product ID
  * @param {Object} productData - Updated product data
- * @returns {Promise<void>}
+ * @returns {Promise<Object>} - Updated product
  */
 export async function updateProduct(productId, productData) {
   try {
-    const docRef = doc(db, 'products', productId);
+    const productRef = doc(db, 'products', productId);
     
-    // Add updated timestamp
-    const dataWithTimestamp = {
+    // Update the product
+    await updateDoc(productRef, {
       ...productData,
       updatedAt: serverTimestamp()
-    };
+    });
     
-    await updateDoc(docRef, dataWithTimestamp);
+    // Invalidate cache
+    deleteCacheItem(`product:${productId}`);
+    if (productData.slug) {
+      deleteCacheItem(`product:slug:${productData.slug}`);
+    }
+    
+    // Return the updated product
+    return getProductById(productId, true); // Bypass cache to get fresh data
   } catch (error) {
     console.error('Error updating product:', error);
     throw error;
@@ -566,4 +616,165 @@ export async function isInWishlist(userId, productId) {
     console.error('Error checking wishlist:', error);
     return false;
   }
-} 
+}
+
+/**
+ * Reserve stock for a product
+ * @param {string} productId - Product ID
+ * @param {string} size - Size to reserve
+ * @param {number} quantity - Quantity to reserve
+ * @param {string} sessionId - Unique session ID
+ * @returns {Promise<boolean>} - Whether reservation was successful
+ */
+export const reserveStock = async (productId, size, quantity, sessionId) => {
+  try {
+    const productRef = doc(db, 'products', productId);
+    
+    // Use transaction to ensure atomic operation
+    return await runTransaction(db, async (transaction) => {
+      const productDoc = await transaction.get(productRef);
+      
+      if (!productDoc.exists()) {
+        throw new Error(`Product ${productId} not found`);
+      }
+      
+      const productData = productDoc.data();
+      
+      // Check which field contains stock information
+      const hasStockField = productData.stock && productData.stock[size] !== undefined;
+      const hasSizesField = productData.sizes && productData.sizes[size] !== undefined;
+      
+      // Get available quantity
+      let availableQuantity = 0;
+      let stockFieldToUpdate = '';
+      
+      if (hasStockField) {
+        availableQuantity = productData.stock[size];
+        stockFieldToUpdate = 'stock';
+      } else if (hasSizesField) {
+        availableQuantity = productData.sizes[size];
+        stockFieldToUpdate = 'sizes';
+      } else {
+        throw new Error(`No stock information for ${productData.name || 'product'} (${size})`);
+      }
+      
+      // Check for existing reservations and clean up expired ones (older than 15 minutes)
+      const reservations = productData.reservations || {};
+      const currentTime = new Date().getTime();
+      let reservedQuantity = 0;
+      
+      Object.entries(reservations).forEach(([resId, res]) => {
+        // Skip the current session's reservation
+        if (resId.startsWith(sessionId)) return;
+        
+        // Check if reservation has expired (15 minutes)
+        const reservationTime = new Date(res.timestamp).getTime();
+        if (currentTime - reservationTime < 15 * 60 * 1000) {
+          // Reservation is still valid
+          if (res.size === size) {
+            reservedQuantity += res.quantity;
+          }
+        }
+      });
+      
+      // Calculate truly available quantity
+      const trueAvailableQuantity = availableQuantity - reservedQuantity;
+      
+      // Check if enough stock is available
+      if (trueAvailableQuantity < quantity) {
+        return {
+          success: false,
+          availableQuantity: trueAvailableQuantity,
+          message: `Only ${trueAvailableQuantity} items available for this product/size`
+        };
+      }
+      
+      // Create a unique reservation ID
+      const reservationId = `${sessionId}_${new Date().getTime()}`;
+      
+      // Add the reservation
+      transaction.update(productRef, {
+        [`reservations.${reservationId}`]: {
+          size,
+          quantity,
+          timestamp: new Date().toISOString(),
+          expiresAt: new Date(currentTime + 15 * 60 * 1000).toISOString() // 15 minutes expiry
+        }
+      });
+      
+      return {
+        success: true,
+        reservationId,
+        expiresAt: new Date(currentTime + 15 * 60 * 1000).toISOString()
+      };
+    });
+  } catch (error) {
+    console.error('Error reserving stock:', error);
+    return {
+      success: false,
+      message: error.message
+    };
+  }
+};
+
+/**
+ * Release a stock reservation
+ * @param {string} productId - Product ID
+ * @param {string} reservationId - Reservation ID to release
+ * @returns {Promise<boolean>} - Whether release was successful
+ */
+export const releaseStockReservation = async (productId, reservationId) => {
+  try {
+    const productRef = doc(db, 'products', productId);
+    
+    await updateDoc(productRef, {
+      [`reservations.${reservationId}`]: deleteField()
+    });
+    
+    return true;
+  } catch (error) {
+    console.error('Error releasing stock reservation:', error);
+    return false;
+  }
+};
+
+/**
+ * Clean up expired reservations for a product
+ * @param {string} productId - Product ID
+ * @returns {Promise<number>} - Number of expired reservations removed
+ */
+export const cleanupExpiredReservations = async (productId) => {
+  try {
+    const productRef = doc(db, 'products', productId);
+    const productDoc = await getDoc(productRef);
+    
+    if (!productDoc.exists()) {
+      throw new Error(`Product ${productId} not found`);
+    }
+    
+    const productData = productDoc.data();
+    const reservations = productData.reservations || {};
+    const currentTime = new Date().getTime();
+    const updates = {};
+    let removedCount = 0;
+    
+    Object.entries(reservations).forEach(([resId, res]) => {
+      // Check if reservation has expired (15 minutes)
+      const reservationTime = new Date(res.timestamp).getTime();
+      if (currentTime - reservationTime >= 15 * 60 * 1000) {
+        // Reservation has expired, mark for deletion
+        updates[`reservations.${resId}`] = deleteField();
+        removedCount++;
+      }
+    });
+    
+    if (removedCount > 0) {
+      await updateDoc(productRef, updates);
+    }
+    
+    return removedCount;
+  } catch (error) {
+    console.error('Error cleaning up expired reservations:', error);
+    return 0;
+  }
+}; 

@@ -18,6 +18,7 @@ const CheckoutPage = () => {
   
   const [orderPlaced, setOrderPlaced] = useState(false);
   const [orderId, setOrderId] = useState(null);
+  const [error, setError] = useState(null);
   
   // Redirect to cart if cart is empty
   useEffect(() => {
@@ -59,6 +60,11 @@ const CheckoutPage = () => {
   const handleOrderPlaced = (newOrderId) => {
     setOrderId(newOrderId);
     setOrderPlaced(true);
+  };
+  
+  // Handle order placement error
+  const handleError = (errorMessage) => {
+    setError(errorMessage);
   };
   
   // Track successful purchase with analytics
@@ -168,7 +174,7 @@ const CheckoutPage = () => {
             {/* Order Form */}
             <div className="lg:col-span-2">
               <div className="bg-white p-6 rounded-lg shadow-md">
-                <CheckoutForm onOrderPlaced={handleOrderPlaced} />
+                <CheckoutForm onOrderPlaced={handleOrderPlaced} onError={handleError} />
               </div>
             </div>
             
@@ -211,7 +217,7 @@ const CheckoutPage = () => {
                 <div className="border-t border-gray-200 pt-4 mt-4">
                   <div className="flex justify-between text-base font-medium text-gray-900">
                     <p>Subtotal</p>
-                    <p>₹{total}</p>
+                    <p>₹{total.toFixed(2)}</p>
                   </div>
                   
                   <div className="flex justify-between text-sm text-gray-500 mt-1">
@@ -221,7 +227,7 @@ const CheckoutPage = () => {
                   
                   <div className="flex justify-between text-base font-medium text-gray-900 mt-4">
                     <p>Total</p>
-                    <p>₹{total}</p>
+                    <p>₹{total.toFixed(2)}</p>
                   </div>
                 </div>
                 
@@ -246,4 +252,4 @@ const CheckoutPage = () => {
   );
 };
 
-export default CheckoutPage; 
+export default CheckoutPage;

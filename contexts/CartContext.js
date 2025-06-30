@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useRef } from 'react';
+import { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from './AuthContext';
 import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../utils/firebase';
@@ -19,11 +19,24 @@ export function CartProvider({ children }) {
   const isSyncingRef = useRef(false);
   const pendingUpdatesRef = useRef(null);
   const { showNotification } = useNotification();
+  const lastAddedItemRef = useRef(null);
+  const debounceTimerRef = useRef(null);
 
   // Debug cart state changes
   useEffect(() => {
     console.log("Cart state updated:", cartItems);
   }, [cartItems]);
+
+  // Debounced save to prevent rapid updates
+  const debouncedSave = useCallback((items, discountValue, promoCodeValue) => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    
+    debounceTimerRef.current = setTimeout(() => {
+      saveCartToFirestore(items, discountValue, promoCodeValue);
+    }, 300);
+  }, []);
 
   // Load cart from localStorage or Firestore on mount or when user changes
   useEffect(() => {
@@ -75,7 +88,7 @@ export function CartProvider({ children }) {
           pendingUpdatesRef.current = null;
           
           // Save these pending updates
-          saveCartToFirestore(items, discount, promoCode);
+          debouncedSave(items, discount, promoCode);
         }
       }
     };
@@ -101,7 +114,7 @@ export function CartProvider({ children }) {
     };
 
     loadCart();
-  }, [currentUser]);
+  }, [currentUser, debouncedSave]);
 
   // Save cart to Firestore and localStorage
   const saveCartToFirestore = async (items, discountValue, promoCodeValue) => {
@@ -172,7 +185,7 @@ export function CartProvider({ children }) {
         
         // Save these pending updates (will trigger a new save cycle)
         setTimeout(() => {
-          saveCartToFirestore(pendingItems, pendingDiscount, pendingPromoCode);
+          debouncedSave(pendingItems, pendingDiscount, pendingPromoCode);
         }, 100);
       }
     }
@@ -181,8 +194,8 @@ export function CartProvider({ children }) {
   // Save cart when it changes
   useEffect(() => {
     if (loading) return;
-    saveCartToFirestore(cartItems, discount, promoCode);
-  }, [cartItems, discount, promoCode, currentUser, loading]);
+    debouncedSave(cartItems, discount, promoCode);
+  }, [cartItems, discount, promoCode, loading, debouncedSave]);
 
   // Calculate totals
   const subtotal = cartItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
@@ -204,14 +217,16 @@ export function CartProvider({ children }) {
       );
 
       let updatedCart;
+      let newItem;
 
       if (existingItemIndex !== -1) {
         // Update quantity if item exists
         updatedCart = [...cartItems];
         updatedCart[existingItemIndex].quantity += quantity;
+        lastAddedItemRef.current = { id: product.id, size };
       } else {
         // Add new item if it doesn't exist
-        const newItem = {
+        newItem = {
           id: product.id,
           name: product.name_en || product.name || "Unknown Product",
           slug: product.slug || "",
@@ -223,6 +238,7 @@ export function CartProvider({ children }) {
         };
         console.log("Creating new cart item:", newItem);
         updatedCart = [...cartItems, newItem];
+        lastAddedItemRef.current = { id: product.id, size };
         
         // Track add to cart event with analytics
         try {
@@ -321,7 +337,7 @@ export function CartProvider({ children }) {
       detail: { items: [], discount: 0, promoCode: '' } 
     }));
     
-    showNotification('Cart cleared', 'info');
+    showNotification('Order placed successfully! Your cart has been cleared.', 'success');
   };
 
   // Apply promo code
@@ -510,4 +526,4 @@ export function CartProvider({ children }) {
       {children}
     </CartContext.Provider>
   );
-} 
+}

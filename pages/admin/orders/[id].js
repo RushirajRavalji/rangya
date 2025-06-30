@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
+import Head from 'next/head';
 import { FiArrowLeft, FiDownload, FiEdit, FiLoader, FiPackage, FiUser, FiMapPin, FiCreditCard, FiCalendar } from 'react-icons/fi';
 import AdminLayout from '../../../components/layout/AdminLayout';
 import { getOrderById, updateOrderStatus } from '../../../utils/orderService';
@@ -8,6 +9,8 @@ import { getProductById } from '../../../utils/productService';
 import OptimizedImage from '../../../components/common/OptimizedImage';
 import { useNotification } from '../../../contexts/NotificationContext';
 import { useReactToPrint } from 'react-to-print';
+import { generateOrderPDF } from '../../../utils/pdfGenerator';
+import AddressDisplay from '../../../components/common/AddressDisplay';
 
 export default function OrderDetail() {
   const router = useRouter();
@@ -16,11 +19,40 @@ export default function OrderDetail() {
   const [products, setProducts] = useState({});
   const [loading, setLoading] = useState(true);
   const [statusLoading, setStatusLoading] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const [error, setError] = useState(null);
   const { showNotification } = useNotification();
   const printRef = useRef();
   
   const orderStatuses = ['pending', 'processing', 'shipped', 'delivered', 'cancelled'];
+
+  // Calculate total
+  const calculateTotal = () => {
+    if (!order?.items) return 0;
+    
+    const subtotal = getSubtotal();
+    const discount = parseFloat(order.discount || 0);
+    const shipping = parseFloat(order.shipping || order.shippingCost || order.shippingFee || 0);
+    const tax = parseFloat(order.tax || 0);
+    
+    // Calculate total in same way as checkout process
+    return subtotal - discount + shipping + tax;
+  };
+  
+  // Calculate subtotal from items
+  const getSubtotal = () => {
+    if (!order?.items) return 0;
+    
+    return order.items.reduce((sum, item) => {
+      const itemPrice = parseFloat(item.price || item.unitPrice || 0);
+      const itemQuantity = parseInt(item.quantity || item.qty || 1);
+      
+      // Ensure we have valid numbers
+      if (isNaN(itemPrice) || isNaN(itemQuantity)) return sum;
+      
+      return sum + (itemPrice * itemQuantity);
+    }, 0);
+  };
 
   useEffect(() => {
     async function fetchOrder() {
@@ -30,6 +62,7 @@ export default function OrderDetail() {
         setLoading(true);
         setError(null);
         
+        // Fetch order data
         const orderData = await getOrderById(id);
         
         if (!orderData) {
@@ -37,21 +70,65 @@ export default function OrderDetail() {
           return;
         }
         
-        setOrder(orderData);
+        // Ensure consistent customer data
+        const enhancedOrder = {
+          ...orderData,
+          // Make sure we have consistent customer information
+          customer: orderData.customer || {
+            name: 'N/A',
+            email: 'N/A'
+          }
+        };
+        
+        // Ensure all items have consistent pricing formats and data
+        if (enhancedOrder.items) {
+          enhancedOrder.items = enhancedOrder.items.map(item => {
+            // Normalize fields for consistency
+            return {
+              ...item,
+              productId: item.productId || item.id,
+              price: parseFloat(item.price || item.unitPrice || 0),
+              quantity: parseInt(item.quantity || item.qty || 1),
+              name: item.name || "Unknown Product",
+              imageURL: item.imageURL || item.imageUrl,
+              size: item.size || "N/A"
+            };
+          });
+          
+          // If subtotal is missing, calculate it from items
+          if (!enhancedOrder.subtotal) {
+            enhancedOrder.subtotal = enhancedOrder.items.reduce((sum, item) => 
+              sum + (item.price * item.quantity), 0);
+          }
+          
+          // If totalAmount is missing but we have a total field, use that
+          if (!enhancedOrder.totalAmount && enhancedOrder.total) {
+            enhancedOrder.totalAmount = enhancedOrder.total;
+          }
+        }
+        
+        setOrder(enhancedOrder);
         
         // Fetch product details for each order item
-        const productPromises = orderData.items.map(async (item) => {
+        const productPromises = enhancedOrder.items.map(async (item) => {
           try {
-            const product = await getProductById(item.id);
-            return { [item.id]: product };
+            // Use consistent product ID reference
+            const productId = item.productId || (item.product && item.product.id) || item.id;
+            if (!productId) return null;
+            
+            const product = item.product || await getProductById(productId);
+            return { [productId]: product };
           } catch (err) {
-            console.error(`Error fetching product ${item.id}:`, err);
-            return { [item.id]: null };
+            console.error(`Error fetching product ${item.productId || item.id}:`, err);
+            return null;
           }
         });
         
         const productResults = await Promise.all(productPromises);
-        const productsMap = productResults.reduce((acc, curr) => ({ ...acc, ...curr }), {});
+        const productsMap = productResults.reduce((acc, curr) => {
+          if (curr) return { ...acc, ...curr };
+          return acc;
+        }, {});
         setProducts(productsMap);
       } catch (err) {
         console.error('Error fetching order:', err);
@@ -66,9 +143,24 @@ export default function OrderDetail() {
   
   const handlePrint = useReactToPrint({
     content: () => printRef.current,
-    documentTitle: `Order-${id}`,
-    onAfterPrint: () => showNotification('Order invoice downloaded successfully', 'success')
+    documentTitle: `Order_${id ? id.slice(0, 8) : 'Invoice'}`,
+    onBeforePrint: () => {
+      showNotification('Preparing PDF for download...', 'info');
+    },
+    onAfterPrint: () => {
+      showNotification('PDF exported successfully!', 'success');
+    },
+    onPrintError: (error) => {
+      console.error('Print failed:', error);
+      showNotification('Failed to export PDF. Please try again.', 'error');
+    },
+    removeAfterPrint: true
   });
+  
+  // PDF export function using browser's print functionality
+  const handleExportPDF = () => {
+    window.print();
+  };
   
   const handleStatusChange = async (newStatus) => {
     try {
@@ -84,18 +176,34 @@ export default function OrderDetail() {
     }
   };
   
-  // Format date
+  // Format date with proper error handling
   const formatDate = (timestamp) => {
     if (!timestamp) return 'N/A';
     
-    const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
-    return new Intl.DateTimeFormat('en-IN', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    }).format(date);
+    try {
+      const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+      if (isNaN(date.getTime())) return 'Invalid Date';
+      
+      return new Intl.DateTimeFormat('en-IN', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      }).format(date);
+    } catch (e) {
+      console.error('Date formatting error:', e);
+      return 'N/A';
+    }
+  };
+  
+  // Format currency
+  const formatCurrency = (amount) => {
+    return new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR',
+      maximumFractionDigits: 2
+    }).format(amount || 0).replace(/^(\D+)/, '₹');
   };
   
   // Get status badge color
@@ -118,7 +226,37 @@ export default function OrderDetail() {
 
   return (
     <AdminLayout title={`Order #${id ? id.slice(0, 8) : ''}`}>
-      <div className="mb-6">
+      <Head>
+        <title>Order #{order?.id?.slice(0, 8) || id?.slice(0, 8) || ''} - Admin</title>
+        <style jsx global>{`
+          @media print {
+            .no-print {
+              display: none !important;
+            }
+            .print-only {
+              display: block !important;
+            }
+            .print-container {
+              padding: 20px !important;
+              max-width: 100% !important;
+            }
+            body {
+              background-color: white !important;
+              color: black !important;
+              font-size: 12pt;
+            }
+            table {
+              width: 100% !important;
+              border-collapse: collapse !important;
+            }
+            td, th {
+              padding: 8px !important;
+              border: 1px solid #ddd !important;
+            }
+          }
+        `}</style>
+      </Head>
+      <div className="mb-6 no-print">
         <Link href="/admin/orders" className="inline-flex items-center text-indigo-deep hover:text-blue-800">
           <FiArrowLeft className="mr-2" /> Back to Orders
         </Link>
@@ -127,340 +265,225 @@ export default function OrderDetail() {
       {loading ? (
         <div className="flex justify-center items-center h-64">
           <FiLoader className="animate-spin h-8 w-8 text-indigo-deep" />
+          <span className="ml-2">Loading order details...</span>
         </div>
       ) : error ? (
         <div className="bg-red-50 border-l-4 border-red-500 text-red-700 p-4">
-          <p>{error}</p>
+          <p>Error: {error}</p>
         </div>
-      ) : order ? (
+      ) : !order ? (
+        <div className="bg-yellow-50 border-l-4 border-yellow-500 text-yellow-700 p-4">
+          <p>Order not found</p>
+        </div>
+      ) : (
         <div>
-          {/* Order Header */}
-          <div className="bg-white shadow-sm rounded-lg p-6 mb-6">
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4">
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900">Order #{id.slice(0, 8)}</h1>
-                <p className="text-gray-500 flex items-center mt-1">
-                  <FiCalendar className="mr-1" /> Placed on {formatDate(order.createdAt)}
-                </p>
-              </div>
-              
-              <div className="mt-4 md:mt-0 flex flex-wrap gap-2">
-                <button
-                  onClick={handlePrint}
-                  className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md bg-white text-gray-700 hover:bg-gray-50"
-                >
-                  <FiDownload className="mr-2" /> Export PDF
-                </button>
+          {/* Printable Invoice Area */}
+          <div ref={printRef} className="print-container">
+            {/* Order Header */}
+            <div className="bg-white shadow-sm rounded-lg p-6 mb-6">
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4">
+                <div>
+                  <h1 className="text-2xl font-bold text-gray-900">Order #{id.slice(0, 8)}</h1>
+                  <p className="text-gray-500 flex items-center mt-1">
+                    <FiCalendar className="mr-1" /> Placed on {formatDate(order.createdAt)}
+                  </p>
+                </div>
                 
-                {!statusLoading ? (
-                  <div className="relative inline-block">
-                    <select
-                      value={order.status}
-                      onChange={(e) => handleStatusChange(e.target.value)}
-                      className={`pl-3 pr-8 py-2 border border-gray-300 rounded-md appearance-none ${getStatusBadgeColor(order.status)}`}
-                    >
-                      {orderStatuses.map(status => (
-                        <option key={status} value={status}>
-                          {status.charAt(0).toUpperCase() + status.slice(1)}
-                        </option>
-                      ))}
-                    </select>
-                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
-                      <FiEdit size={16} />
+                <div className="mt-4 md:mt-0 flex flex-wrap gap-2">
+                  <button
+                    onClick={handleExportPDF}
+                    className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none no-print"
+                  >
+                    <FiDownload className="mr-2 -ml-1 h-5 w-5" />
+                    Export PDF
+                  </button>
+                  
+                  <div className="inline-flex items-center">
+                    <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusBadgeColor(order.status)}`}>
+                      {order.status.charAt(0).toUpperCase() + order.status.slice(1)}
+                    </span>
+                    
+                    <div className="ml-2 relative no-print">
+                      <select
+                        value={order.status}
+                        onChange={(e) => handleStatusChange(e.target.value)}
+                        disabled={statusLoading}
+                        className="border border-gray-300 rounded-md shadow-sm py-2 pl-3 pr-10 text-sm focus:outline-none focus:ring-indigo-deep focus:border-indigo-deep"
+                      >
+                        {orderStatuses.map((status) => (
+                          <option key={status} value={status}>
+                            {status.charAt(0).toUpperCase() + status.slice(1)}
+                          </option>
+                        ))}
+                      </select>
+                      
+                      <FiEdit className="absolute right-3 top-1/2 transform -translate-y-1/2 pointer-events-none text-gray-400" />
                     </div>
                   </div>
-                ) : (
-                  <div className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md bg-white">
-                    <FiLoader className="animate-spin mr-2" /> Updating...
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mt-6">
+                {/* Customer Info */}
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <div className="flex items-center mb-2 text-gray-700">
+                    <FiUser className="mr-2" /> Customer
                   </div>
-                )}
+                  <div>
+                    <p className="font-medium">{order.customer?.name || order.shippingAddress?.fullName || 'Guest Customer'}</p>
+                    <p className="text-gray-500 text-sm">{order.customer?.email || 'N/A'}</p>
+                    <p className="text-gray-500 text-sm">{order.customer?.phone || order.shippingAddress?.phone || 'N/A'}</p>
+                  </div>
+                </div>
+                
+                {/* Shipping Address - Use the AddressDisplay component */}
+                <AddressDisplay 
+                  address={order.shippingAddress}
+                  customerName={order.customer?.name}
+                  title="Shipping Address"
+                />
+                
+                {/* Payment Details */}
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <div className="flex items-center mb-2 text-gray-700">
+                    <FiCreditCard className="mr-2" /> Payment
+                  </div>
+                  <div>
+                    <p className="font-medium capitalize">{order.paymentMethod || 'Cod'}</p>
+                    <p className="text-sm text-gray-500">Status: {order.paymentStatus || 'N/A'}</p>
+                  </div>
+                </div>
+                
+                {/* Fulfillment Status */}
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <div className="flex items-center mb-2 text-gray-700">
+                    <FiMapPin className="mr-2" /> Fulfillment
+                  </div>
+                  <div>
+                    <p className="font-medium capitalize">{order.status || 'Pending'}</p>
+                  </div>
+                </div>
               </div>
             </div>
             
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
-              <div className="border border-gray-200 rounded-md p-4">
-                <div className="flex items-center text-gray-500 mb-2">
-                  <FiUser className="mr-2" /> Customer
-                </div>
-                <h3 className="font-medium">{order.customer?.name || 'N/A'}</h3>
-                <p className="text-sm text-gray-500">{order.customer?.email || 'N/A'}</p>
-                <p className="text-sm text-gray-500">{order.customer?.phone || 'N/A'}</p>
+            {/* Order Items */}
+            <div className="bg-white shadow-sm rounded-lg overflow-hidden mb-6">
+              <div className="px-6 py-4 border-b border-gray-200">
+                <h2 className="text-lg font-medium text-gray-900">Order Items</h2>
               </div>
-              
-              <div className="border border-gray-200 rounded-md p-4">
-                <div className="flex items-center text-gray-500 mb-2">
-                  <FiMapPin className="mr-2" /> Shipping Address
-                </div>
-                <h3 className="font-medium">{order.shippingAddress?.name || order.customer?.name || 'N/A'}</h3>
-                <p className="text-sm text-gray-600">
-                  {order.shippingAddress?.street}, {order.shippingAddress?.city}
-                </p>
-                <p className="text-sm text-gray-600">
-                  {order.shippingAddress?.state}, {order.shippingAddress?.postalCode}
-                </p>
-              </div>
-              
-              <div className="border border-gray-200 rounded-md p-4">
-                <div className="flex items-center text-gray-500 mb-2">
-                  <FiCreditCard className="mr-2" /> Payment
-                </div>
-                <h3 className="font-medium capitalize">{order.paymentMethod || 'N/A'}</h3>
-                <p className="text-sm text-gray-500">Status: {order.paymentStatus || 'N/A'}</p>
-                {order.transactionId && (
-                  <p className="text-xs text-gray-500 mt-1">ID: {order.transactionId}</p>
-                )}
-              </div>
-              
-              <div className="border border-gray-200 rounded-md p-4">
-                <div className="flex items-center text-gray-500 mb-2">
-                  <FiPackage className="mr-2" /> Fulfillment
-                </div>
-                <div className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusBadgeColor(order.status)}`}>
-                  {order.status}
-                </div>
-                {order.trackingNumber && (
-                  <p className="text-sm text-gray-500 mt-2">
-                    Tracking: {order.trackingNumber}
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
-          
-          {/* Order Items */}
-          <div className="bg-white shadow-sm rounded-lg overflow-hidden mb-6">
-            <div className="px-6 py-4 border-b border-gray-200">
-              <h2 className="text-lg font-medium text-gray-900">Order Items</h2>
-            </div>
-            
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Product
-                    </th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Size
-                    </th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Price
-                    </th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Quantity
-                    </th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Total
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {order.items.map((item) => {
-                    const product = products[item.id];
-                    return (
-                      <tr key={`${item.id}-${item.size}`}>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="flex items-center">
-                            <div className="h-10 w-10 flex-shrink-0">
-                              {product && product.images && product.images[0] ? (
-                                <OptimizedImage
-                                  src={product.images[0]}
-                                  alt={product.name_en}
-                                  width={40}
-                                  height={40}
-                                  className="h-10 w-10 object-cover rounded-md"
-                                />
-                              ) : (
-                                <div className="h-10 w-10 bg-gray-200 rounded-md flex items-center justify-center">
-                                  <FiPackage className="text-gray-400" />
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Product
+                      </th>
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Size
+                      </th>
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Price
+                      </th>
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Quantity
+                      </th>
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Total
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {order.items && order.items.length > 0 ? (
+                      order.items.map((item, index) => {
+                        // Use the correct price and quantity from the order item
+                        const itemPrice = parseFloat(item.price || item.unitPrice || 0);
+                        const itemQuantity = parseInt(item.quantity || item.qty || 1);
+                        const itemTotal = itemPrice * itemQuantity;
+                        
+                        return (
+                          <tr key={index}>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="flex items-center">
+                                <div className="flex-shrink-0 h-10 w-10 bg-gray-100 rounded">
+                                  {item.imageUrl || item.imageURL ? (
+                                    <OptimizedImage
+                                      src={item.imageUrl || item.imageURL}
+                                      alt={item.name}
+                                      width={40}
+                                      height={40}
+                                      className="w-10 h-10 object-cover rounded"
+                                    />
+                                  ) : (
+                                    <div className="w-10 h-10 flex items-center justify-center bg-gray-100 rounded">
+                                      <FiPackage className="text-gray-400" />
+                                    </div>
+                                  )}
                                 </div>
-                              )}
-                            </div>
-                            <div className="ml-4">
-                              <div className="text-sm font-medium text-gray-900">
-                                {product ? product.name_en : item.name || 'Product not found'}
+                                <div className="ml-4">
+                                  <div className="text-sm font-medium text-gray-900">
+                                    {item.name || 'Product Name'}
+                                  </div>
+                                  <div className="text-sm text-gray-500">
+                                    SKU: {item.sku || 'N/A'}
+                                  </div>
+                                </div>
                               </div>
-                              <div className="text-xs text-gray-500">
-                                SKU: {product ? product.sku || 'N/A' : 'N/A'}
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          {item.size || 'N/A'}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          ₹{item.price}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          {item.quantity}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                          ₹{(item.price * item.quantity).toFixed(2)}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                              {item.size || 'N/A'}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                              {formatCurrency(itemPrice)}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                              {itemQuantity}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                              {formatCurrency(itemTotal)}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    ) : (
+                      <tr>
+                        <td colSpan="5" className="px-6 py-4 text-center text-gray-500">
+                          No items found
                         </td>
                       </tr>
-                    );
-                  })}
-                </tbody>
-                <tfoot className="bg-gray-50">
-                  <tr>
-                    <td colSpan="4" className="px-6 py-4 text-sm font-medium text-gray-900 text-right">
-                      Subtotal:
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      ₹{order.subtotal?.toFixed(2) || '0.00'}
-                    </td>
-                  </tr>
-                  {order.discount > 0 && (
-                    <tr>
-                      <td colSpan="4" className="px-6 py-4 text-sm font-medium text-gray-900 text-right">
-                        Discount:
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-red-600">
-                        -₹{order.discount?.toFixed(2) || '0.00'}
-                      </td>
-                    </tr>
-                  )}
-                  <tr>
-                    <td colSpan="4" className="px-6 py-4 text-sm font-medium text-gray-900 text-right">
-                      Shipping:
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      ₹{order.shippingCost?.toFixed(2) || '0.00'}
-                    </td>
-                  </tr>
-                  {order.tax > 0 && (
-                    <tr>
-                      <td colSpan="4" className="px-6 py-4 text-sm font-medium text-gray-900 text-right">
-                        Tax:
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                        ₹{order.tax?.toFixed(2) || '0.00'}
-                      </td>
-                    </tr>
-                  )}
-                  <tr>
-                    <td colSpan="4" className="px-6 py-4 text-base font-bold text-gray-900 text-right">
-                      Total:
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-base font-bold text-indigo-deep">
-                      ₹{order.total?.toFixed(2) || '0.00'}
-                    </td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          </div>
-          
-          {/* Order Notes */}
-          {order.notes && (
-            <div className="bg-white shadow-sm rounded-lg p-6 mb-6">
-              <h2 className="text-lg font-medium text-gray-900 mb-2">Order Notes</h2>
-              <p className="text-gray-600">{order.notes}</p>
-            </div>
-          )}
-          
-          {/* Printable Invoice */}
-          <div className="hidden">
-            <div ref={printRef} className="p-8 max-w-4xl mx-auto bg-white">
-              <div className="flex justify-between items-start mb-8">
-                <div>
-                  <h1 className="text-2xl font-bold">Ranga</h1>
-                  <p className="text-gray-600">Style Me Apna Rang</p>
-                </div>
-                <div className="text-right">
-                  <h2 className="text-xl font-bold">INVOICE</h2>
-                  <p className="text-gray-600">#{id.slice(0, 8)}</p>
-                  <p className="text-gray-600">{formatDate(order.createdAt)}</p>
-                </div>
+                    )}
+                  </tbody>
+                </table>
               </div>
               
-              <div className="grid grid-cols-2 gap-8 mb-8">
-                <div>
-                  <h3 className="font-bold text-gray-700 mb-2">Bill To:</h3>
-                  <p className="text-gray-600">{order.customer?.name}</p>
-                  <p className="text-gray-600">{order.customer?.email}</p>
-                  <p className="text-gray-600">{order.customer?.phone}</p>
+              {/* Order Summary */}
+              <div className="border-t border-gray-200 px-6 py-4">
+                <div className="flex flex-col items-end">
+                  <div className="w-full max-w-md space-y-1">
+                    <div className="flex justify-between">
+                      <span className="text-sm text-gray-500">Subtotal:</span>
+                      <span className="text-sm font-medium">{formatCurrency(order.subtotal || getSubtotal())}</span>
+                    </div>
+                    {parseFloat(order.discount || 0) > 0 && (
+                      <div className="flex justify-between">
+                        <span className="text-sm text-gray-500">Discount:</span>
+                        <span className="text-sm font-medium">-{formatCurrency(order.discount)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between">
+                      <span className="text-sm text-gray-500">Shipping:</span>
+                      <span className="text-sm font-medium">{formatCurrency(order.shipping || order.shippingCost || order.shippingFee || 0)}</span>
+                    </div>
+                    <div className="flex justify-between pt-2 border-t border-gray-200">
+                      <span className="text-base font-medium">Total:</span>
+                      <span className="text-base font-bold">{formatCurrency(order.totalAmount || order.total || calculateTotal())}</span>
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="font-bold text-gray-700 mb-2">Ship To:</h3>
-                  <p className="text-gray-600">{order.shippingAddress?.name || order.customer?.name}</p>
-                  <p className="text-gray-600">{order.shippingAddress?.street}</p>
-                  <p className="text-gray-600">{order.shippingAddress?.city}, {order.shippingAddress?.state} {order.shippingAddress?.postalCode}</p>
-                </div>
-              </div>
-              
-              <table className="w-full mb-8">
-                <thead>
-                  <tr className="border-b-2 border-gray-300">
-                    <th className="py-2 text-left">Product</th>
-                    <th className="py-2 text-left">Size</th>
-                    <th className="py-2 text-left">Price</th>
-                    <th className="py-2 text-left">Qty</th>
-                    <th className="py-2 text-right">Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {order.items.map((item, index) => {
-                    const product = products[item.id];
-                    return (
-                      <tr key={index} className="border-b border-gray-200">
-                        <td className="py-4">
-                          {product ? product.name_en : item.name || 'Product not found'}
-                        </td>
-                        <td className="py-4">{item.size || 'N/A'}</td>
-                        <td className="py-4">₹{item.price}</td>
-                        <td className="py-4">{item.quantity}</td>
-                        <td className="py-4 text-right">₹{(item.price * item.quantity).toFixed(2)}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-                <tfoot>
-                  <tr>
-                    <td colSpan="4" className="py-2 text-right font-medium">Subtotal:</td>
-                    <td className="py-2 text-right">₹{order.subtotal?.toFixed(2) || '0.00'}</td>
-                  </tr>
-                  {order.discount > 0 && (
-                    <tr>
-                      <td colSpan="4" className="py-2 text-right font-medium">Discount:</td>
-                      <td className="py-2 text-right">-₹{order.discount?.toFixed(2) || '0.00'}</td>
-                    </tr>
-                  )}
-                  <tr>
-                    <td colSpan="4" className="py-2 text-right font-medium">Shipping:</td>
-                    <td className="py-2 text-right">₹{order.shippingCost?.toFixed(2) || '0.00'}</td>
-                  </tr>
-                  {order.tax > 0 && (
-                    <tr>
-                      <td colSpan="4" className="py-2 text-right font-medium">Tax:</td>
-                      <td className="py-2 text-right">₹{order.tax?.toFixed(2) || '0.00'}</td>
-                    </tr>
-                  )}
-                  <tr className="border-t-2 border-gray-300">
-                    <td colSpan="4" className="py-2 text-right font-bold">Total:</td>
-                    <td className="py-2 text-right font-bold">₹{order.total?.toFixed(2) || '0.00'}</td>
-                  </tr>
-                </tfoot>
-              </table>
-              
-              <div className="border-t-2 border-gray-300 pt-4">
-                <h3 className="font-bold text-gray-700 mb-2">Payment Information:</h3>
-                <p className="text-gray-600">Method: {order.paymentMethod || 'N/A'}</p>
-                <p className="text-gray-600">Status: {order.paymentStatus || 'N/A'}</p>
-                {order.transactionId && (
-                  <p className="text-gray-600">Transaction ID: {order.transactionId}</p>
-                )}
-              </div>
-              
-              <div className="mt-8 text-center text-gray-500 text-sm">
-                <p>Thank you for your order!</p>
-                <p>For any questions, please contact support@ranga-denim.com</p>
               </div>
             </div>
           </div>
         </div>
-      ) : null}
+      )}
     </AdminLayout>
   );
 }

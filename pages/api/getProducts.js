@@ -1,5 +1,5 @@
 import { getProducts } from '../../utils/productService';
-import rateLimit from '../../utils/rateLimit';
+import { rateLimit } from '../../utils/rateLimit';
 
 // Create a rate limiter that allows 30 requests per minute
 const limiter = rateLimit({
@@ -112,4 +112,4 @@ export default async function handler(req, res) {
       message: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
-} 
+}

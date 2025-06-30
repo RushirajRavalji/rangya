@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
 import { FiMail, FiLock, FiLogIn, FiLoader, FiAlertCircle, FiArrowRight } from 'react-icons/fi';
-import { FcGoogle } from 'react-icons/fc';
 import { useAuth } from '../contexts/AuthContext';
 import { useNotification } from '../contexts/NotificationContext';
 import Head from 'next/head';
@@ -10,14 +9,13 @@ import Head from 'next/head';
 export default function Login() {
   const router = useRouter();
   const { redirect } = router.query;
-  const { currentUser, signInWithGoogle, loginWithEmail, error: authError } = useAuth();
+  const { currentUser, loginWithEmail, error: authError } = useAuth();
   const { showNotification } = useNotification();
   
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [googleLoading, setGoogleLoading] = useState(false);
   
   // Redirect if already logged in
   useEffect(() => {
@@ -71,53 +69,6 @@ export default function Login() {
       }
     } finally {
       setLoading(false);
-    }
-  };
-  
-  // Handle Google sign-in
-  const handleGoogleSignIn = async () => {
-    try {
-      setGoogleLoading(true);
-      setError('');
-      
-      // Sign in with Google
-      await signInWithGoogle();
-      
-      // Show success notification
-      showNotification('Login successful!', 'success');
-      
-      // Redirect to the specified path or homepage
-      const redirectPath = redirect || '/';
-      router.push(redirectPath);
-    } catch (error) {
-      console.error('Google sign-in error:', error.code, error.message);
-      
-      // Set user-friendly error message based on the error code
-      if (error.code === 'auth/popup-closed-by-user') {
-        setError('Sign-in was cancelled. Please try again.');
-      } else if (error.code === 'auth/popup-blocked') {
-        setError('Sign-in popup was blocked. Please allow popups for this site and try again.');
-      } else if (error.code === 'auth/account-exists-with-different-credential') {
-        setError('An account already exists with the same email address but different sign-in credentials. Please sign in using the original method.');
-      } else if (error.code === 'auth/unauthorized-domain') {
-        setError(`This domain is not authorized for OAuth operations. Please contact support. (Current domain: ${window.location.hostname})`);
-      } else if (error.code === 'auth/operation-not-allowed') {
-        setError('Google sign-in is not enabled. Please contact support.');
-      } else if (error.code === 'auth/network-request-failed') {
-        setError('Network error. Please check your internet connection and try again.');
-      } else if (error.code === 'auth/internal-error') {
-        setError('Internal authentication error. Please try again or use a different sign-in method.');
-      } else if (error.code === 'auth/cancelled-popup-request') {
-        setError('Multiple popup requests detected. Please try again.');
-      } else if (error.code === 'auth/web-storage-unsupported') {
-        setError('This browser does not support web storage. Please use a different browser.');
-      } else if (error.code === 'auth/timeout') {
-        setError('Authentication timed out. Please try again.');
-      } else {
-        setError(error.message || 'Failed to sign in with Google. Please try again.');
-      }
-    } finally {
-      setGoogleLoading(false);
     }
   };
   
@@ -185,7 +136,7 @@ export default function Login() {
                     onChange={(e) => setEmail(e.target.value)}
                     className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
                     placeholder="you@example.com"
-                    disabled={loading || googleLoading}
+                    disabled={loading}
                   />
                 </div>
               </div>
@@ -209,7 +160,7 @@ export default function Login() {
                     onChange={(e) => setPassword(e.target.value)}
                     className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
                     placeholder="••••••••"
-                    disabled={loading || googleLoading}
+                    disabled={loading}
                   />
                 </div>
               </div>
@@ -217,7 +168,7 @@ export default function Login() {
               {/* Forgot Password Link */}
               <div className="flex items-center justify-end">
                 <div className="text-sm">
-                  <Link href="/reset-password" className="font-medium text-indigo-600 hover:text-indigo-500">
+                  <Link href="/reset-password-request" className="font-medium text-indigo-600 hover:text-indigo-500">
                     Forgot your password?
                   </Link>
                 </div>
@@ -227,7 +178,7 @@ export default function Login() {
               <div>
                 <button
                   type="submit"
-                  disabled={loading || googleLoading}
+                  disabled={loading}
                   className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
                 >
                   {loading ? (
@@ -244,49 +195,6 @@ export default function Login() {
                 </button>
               </div>
             </form>
-            
-            {/* Divider */}
-            <div className="mt-6">
-              <div className="relative">
-                <div className="absolute inset-0 flex items-center">
-                  <div className="w-full border-t border-gray-300" />
-                </div>
-                <div className="relative flex justify-center text-sm">
-                  <span className="px-2 bg-white text-gray-500">
-                    Or continue with
-                  </span>
-                </div>
-              </div>
-              
-              {/* Google Sign-in Button */}
-              <div className="mt-6">
-                <button
-                  type="button"
-                  onClick={handleGoogleSignIn}
-                  disabled={loading || googleLoading}
-                  className="w-full flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
-                >
-                  {googleLoading ? (
-                    <>
-                      <FiLoader className="animate-spin h-5 w-5 mr-2" />
-                      Connecting to Google...
-                    </>
-                  ) : (
-                    <>
-                      <FcGoogle className="h-5 w-5 mr-2" />
-                      Sign in with Google
-                    </>
-                  )}
-                </button>
-                
-                {/* Information message about Google sign-in */}
-                <p className="mt-2 text-xs text-center text-gray-500">
-                  If Google sign-in doesn't work, please try using email/password login.
-                  <br />
-                  Ensure pop-ups are allowed for this site.
-                </p>
-              </div>
-            </div>
             
             {/* Register Link */}
             <div className="mt-6">

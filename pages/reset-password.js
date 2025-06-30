@@ -30,7 +30,11 @@ export default function ResetPassword() {
   // Verify the action code when the component loads
   useEffect(() => {
     const verifyCode = async () => {
-      if (!oobCode) return;
+      if (!oobCode) {
+        setVerifying(false);
+        setError('No reset code provided. Please check your email link and try again.');
+        return;
+      }
       
       try {
         setVerifying(true);
@@ -45,12 +49,7 @@ export default function ResetPassword() {
       }
     };
     
-    if (oobCode) {
-      verifyCode();
-    } else {
-      setVerifying(false);
-      setError('No reset code provided. Please use the link from your email.');
-    }
+    verifyCode();
   }, [oobCode]);
 
   // Check password strength as user types

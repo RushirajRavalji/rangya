@@ -1,301 +1,199 @@
-import Head from 'next/head';
 import React from 'react';
+import Head from 'next/head';
+import { useRouter } from 'next/router';
 
 /**
- * SEO component for managing document head metadata
+ * Generate organization structured data for SEO
+ * @returns {Object} Organization schema object
+ */
+export const generateOrganizationStructuredData = () => {
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://rangya.com';
+  const siteName = 'Rangya';
+  
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'Organization',
+    name: siteName,
+    url: siteUrl,
+    logo: `${siteUrl}/images/logo/logo.png`,
+    sameAs: [
+      'https://facebook.com/rangya',
+      'https://instagram.com/rangya',
+      'https://twitter.com/rangya'
+    ],
+    contactPoint: {
+      '@type': 'ContactPoint',
+      telephone: '+91-123-456-7890',
+      contactType: 'customer service',
+      availableLanguage: ['English', 'Hindi']
+    }
+  };
+};
+
+/**
+ * SEO component for improved search engine optimization
  * 
  * @param {Object} props - Component props
  * @param {string} props.title - Page title
  * @param {string} props.description - Page description
  * @param {string} props.canonical - Canonical URL
- * @param {string} props.image - Open Graph image URL
- * @param {string} props.type - Open Graph type (website, article, product)
- * @param {Object} props.product - Product data for product pages
- * @param {Object} props.article - Article data for blog posts
- * @param {Array} props.keywords - SEO keywords
- * @param {boolean} props.noindex - Whether to prevent indexing
- * @param {Object} props.openGraph - Additional Open Graph properties
- * @param {Object} props.twitter - Additional Twitter card properties
- * @param {Array} props.additionalMetaTags - Additional meta tags
- * @param {Array} props.additionalLinkTags - Additional link tags
- * @returns {JSX.Element} SEO component
+ * @param {string} props.ogImage - Open Graph image URL
+ * @param {string} props.ogType - Open Graph type
+ * @param {Array} props.keywords - Keywords for meta tags
+ * @param {Object} props.product - Product data for product schema
+ * @param {Array} props.breadcrumbs - Breadcrumb data for breadcrumb schema
+ * @param {boolean} props.noindex - Whether to add noindex meta tag
  */
 const SEO = ({
-  title = 'Rangya - Premium Denim Clothing',
-  description = 'Discover premium denim clothing and accessories at Rangya. Shop our collection of high-quality jeans, jackets, shirts and more.',
+  title,
+  description,
   canonical,
-  image = '/images/logo/logo.png',
-  type = 'website',
-  product = null,
-  article = null,
-  keywords = [],
-  noindex = false,
-  openGraph = {},
-  twitter = {},
-  additionalMetaTags = [],
-  additionalLinkTags = []
+  ogImage,
+  ogType = 'website',
+  keywords,
+  product,
+  breadcrumbs,
+  noindex = false
 }) => {
-  // Base URL for canonical and OG URLs
-  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://rangya.com';
+  const router = useRouter();
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://rangya.com';
+  const siteName = 'Rangya';
   
-  // Format canonical URL
-  const canonicalUrl = canonical ? 
-    (canonical.startsWith('http') ? canonical : `${baseUrl}${canonical}`) : 
-    baseUrl;
+  // Default meta values
+  const defaultTitle = 'Rangya - Premium Denim & Clothing';
+  const defaultDescription = 'Discover premium quality denim and clothing at Rangya. Shop our collection of sustainable, ethically-made fashion.';
+  const defaultImage = `${siteUrl}/images/logo/logo.png`;
   
-  // Format image URL
-  const imageUrl = image ? 
-    (image.startsWith('http') ? image : `${baseUrl}${image}`) : 
-    `${baseUrl}/images/logo/logo.png`;
+  // Final values
+  const seoTitle = title ? `${title} | ${siteName}` : defaultTitle;
+  const seoDescription = description || defaultDescription;
+  const seoImage = ogImage || defaultImage;
+  const url = canonical || `${siteUrl}${router.asPath}`;
   
-  // Prepare structured data
-  let structuredData = {
+  // Generate JSON-LD for organization
+  const organizationSchema = generateOrganizationStructuredData();
+  
+  // Generate JSON-LD for breadcrumbs if provided
+  const breadcrumbsSchema = breadcrumbs ? {
     '@context': 'https://schema.org',
-    '@type': 'WebSite',
-    name: 'Rangya',
-    url: baseUrl,
-    description: description,
-    potentialAction: {
-      '@type': 'SearchAction',
-      target: `${baseUrl}/products?search={search_term_string}`,
-      'query-input': 'required name=search_term_string'
-    }
-  };
+    '@type': 'BreadcrumbList',
+    itemListElement: breadcrumbs.map((crumb, index) => ({
+      '@type': 'ListItem',
+      position: index + 1,
+      name: crumb.name,
+      item: `${siteUrl}${crumb.path}`
+    }))
+  } : null;
   
-  // Add product structured data if provided
-  if (product && type === 'product') {
-    structuredData = generateProductStructuredData(product);
-  }
-  
-  // Add article structured data if provided
-  if (article && type === 'article') {
-    structuredData = {
-      '@context': 'https://schema.org',
-      '@type': 'Article',
-      headline: article.title,
-      image: article.image ? 
-        (article.image.startsWith('http') ? article.image : `${baseUrl}${article.image}`) : 
-        imageUrl,
-      datePublished: article.publishDate,
-      dateModified: article.modifiedDate || article.publishDate,
-      author: {
-        '@type': 'Person',
-        name: article.author || 'Rangya Team'
-      },
-      publisher: {
-        '@type': 'Organization',
-        name: 'Rangya',
-        logo: {
-          '@type': 'ImageObject',
-          url: `${baseUrl}/images/logo/logo.png`
-        }
-      },
-      description: article.description || description
-    };
-  }
-
-  // Prepare organization structured data
-  const organizationStructuredData = generateOrganizationStructuredData();
-  
-  // Prepare Open Graph data
-  const openGraphData = {
-    title: openGraph.title || title,
-    description: openGraph.description || description,
-    type: openGraph.type || type,
-    url: openGraph.url || canonicalUrl,
-    images: openGraph.images || [
-      {
-        url: imageUrl,
-        width: 1200,
-        height: 630,
-        alt: title
-      }
-    ],
-    site_name: 'Rangya',
-    ...openGraph
-  };
-  
-  // Prepare Twitter card data
-  const twitterData = {
-    card: twitter.card || 'summary_large_image',
-    title: twitter.title || title,
-    description: twitter.description || description,
-    image: twitter.image || imageUrl,
-    ...twitter
-  };
-  
-  return (
-    <Head>
-      {/* Basic Meta Tags */}
-      <title>{title}</title>
-      <meta name="description" content={description} />
-      {keywords.length > 0 && (
-        <meta name="keywords" content={keywords.join(', ')} />
-      )}
-      <link rel="canonical" href={canonicalUrl} />
-      
-      {/* Robots Meta Tags */}
-      {noindex ? (
-        <meta name="robots" content="noindex, nofollow" />
-      ) : (
-        <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
-      )}
-      
-      {/* Open Graph Meta Tags */}
-      <meta property="og:title" content={openGraphData.title} />
-      <meta property="og:description" content={openGraphData.description} />
-      <meta property="og:type" content={openGraphData.type} />
-      <meta property="og:url" content={openGraphData.url} />
-      <meta property="og:image" content={openGraphData.images[0].url} />
-      <meta property="og:image:width" content={openGraphData.images[0].width || 1200} />
-      <meta property="og:image:height" content={openGraphData.images[0].height || 630} />
-      <meta property="og:image:alt" content={openGraphData.images[0].alt || title} />
-      <meta property="og:site_name" content={openGraphData.site_name} />
-      
-      {/* Twitter Meta Tags */}
-      <meta name="twitter:card" content={twitterData.card} />
-      <meta name="twitter:title" content={twitterData.title} />
-      <meta name="twitter:description" content={twitterData.description} />
-      <meta name="twitter:image" content={twitterData.image} />
-      
-      {/* Structured Data */}
-      <script 
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
-      />
-      
-      {/* Organization Structured Data */}
-      <script 
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationStructuredData) }}
-      />
-      
-      {/* Additional Meta Tags */}
-      {additionalMetaTags.map((tag, index) => (
-        <meta key={`meta-${index}`} {...tag} />
-      ))}
-      
-      {/* Additional Link Tags */}
-      {additionalLinkTags.map((tag, index) => (
-        <link key={`link-${index}`} {...tag} />
-      ))}
-    </Head>
-  );
-};
-
-// Helper function to generate product structured data
-export const generateProductStructuredData = (product) => {
-  if (!product) return null;
-
-  const productData = {
-    '@context': 'https://schema.org/',
+  // Generate JSON-LD for product if provided
+  const productSchema = product ? {
+    '@context': 'https://schema.org',
     '@type': 'Product',
-    name: product.name_en || product.name,
-    description: product.description_en || product.description,
-    sku: product.sku || product.id,
-    mpn: product.mpn || product.id,
-    image: product.images && product.images.length > 0 ? product.images : [],
+    name: product.name,
+    image: product.images && product.images.length > 0 ? product.images.map(img => img.startsWith('http') ? img : `${siteUrl}${img}`) : defaultImage,
+    description: product.description,
+    sku: product.sku,
+    mpn: product.sku,
     brand: {
       '@type': 'Brand',
-      name: 'Rangya'
+      name: product.brand || siteName
     },
     offers: {
       '@type': 'Offer',
-      url: product.url || `https://rangya.com/products/${product.slug}`,
+      url: url,
       priceCurrency: 'INR',
-      price: product.salePrice || product.price,
+      price: product.price,
       priceValidUntil: new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0],
       itemCondition: 'https://schema.org/NewCondition',
-      availability: product.stock && Object.values(product.stock).some(qty => qty > 0) 
-        ? 'https://schema.org/InStock'
-        : 'https://schema.org/OutOfStock'
-    }
-  };
-
-  // Add reviews if available
-  if (product.reviews && product.reviews.length > 0) {
-    const avgRating = product.reviews.reduce((sum, review) => sum + review.rating, 0) / product.reviews.length;
-    
-    productData.aggregateRating = {
-      '@type': 'AggregateRating',
-      ratingValue: avgRating.toFixed(1),
-      reviewCount: product.reviews.length
-    };
-    
-    productData.review = product.reviews.map(review => ({
-      '@type': 'Review',
-      reviewRating: {
-        '@type': 'Rating',
-        ratingValue: review.rating
-      },
-      author: {
-        '@type': 'Person',
-        name: review.author
-      },
-      reviewBody: review.text
-    }));
-  }
-
-  return productData;
-};
-
-// Helper function to generate breadcrumb structured data
-export const generateBreadcrumbStructuredData = (items) => {
-  return {
-    '@context': 'https://schema.org/',
-    '@type': 'BreadcrumbList',
-    itemListElement: items.map((item, index) => ({
-      '@type': 'ListItem',
-      position: index + 1,
-      name: item.name,
-      item: item.url.startsWith('http') ? item.url : `https://rangya.com${item.url}`
-    }))
-  };
-};
-
-// Helper function to generate organization structured data
-export const generateOrganizationStructuredData = () => {
-  return {
-    '@context': 'https://schema.org',
-    '@type': 'Organization',
-    name: 'Rangya – Style Me Apna Rang',
-    url: 'https://rangya.com',
-    logo: 'https://rangya.com/images/logo/logo.png',
-    sameAs: [
-      'https://www.facebook.com/rangya',
-      'https://www.instagram.com/rangya',
-      'https://twitter.com/rangya'
-    ],
-    contactPoint: {
-      '@type': 'ContactPoint',
-      telephone: '+91-9876543210',
-      contactType: 'customer service',
-      availableLanguage: ['English', 'Hindi']
+      availability: product.stock > 0 ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock'
     },
-    address: {
-      '@type': 'PostalAddress',
-      streetAddress: 'Shop No. 123, Main Street',
-      addressLocality: 'New Delhi',
-      postalCode: '110001',
-      addressCountry: 'IN'
-    }
-  };
-};
-
-// Helper function to generate FAQ structured data
-export const generateFAQStructuredData = (questions) => {
-  return {
-    '@context': 'https://schema.org',
-    '@type': 'FAQPage',
-    mainEntity: questions.map(q => ({
-      '@type': 'Question',
-      name: q.question,
-      acceptedAnswer: {
-        '@type': 'Answer',
-        text: q.answer
+    ...(product.rating && {
+      aggregateRating: {
+        '@type': 'AggregateRating',
+        ratingValue: product.rating.average,
+        reviewCount: product.rating.count
       }
-    }))
-  };
+    }),
+    ...(product.reviews && product.reviews.length > 0 && {
+      review: product.reviews.map(review => ({
+        '@type': 'Review',
+        reviewRating: {
+          '@type': 'Rating',
+          ratingValue: review.rating
+        },
+        author: {
+          '@type': 'Person',
+          name: review.userName
+        },
+        reviewBody: review.comment
+      }))
+    })
+  } : null;
+
+  return (
+    <Head>
+      <title>{seoTitle}</title>
+      <meta name="description" content={seoDescription} />
+      
+      {/* Canonical URL */}
+      <link rel="canonical" href={url} />
+      
+      {/* Keywords */}
+      {keywords && <meta name="keywords" content={keywords.join(', ')} />}
+      
+      {/* Robots meta */}
+      {noindex ? (
+        <meta name="robots" content="noindex, nofollow" />
+      ) : (
+        <meta name="robots" content="index, follow" />
+      )}
+      
+      {/* Open Graph / Facebook */}
+      <meta property="og:type" content={ogType} />
+      <meta property="og:url" content={url} />
+      <meta property="og:title" content={seoTitle} />
+      <meta property="og:description" content={seoDescription} />
+      <meta property="og:image" content={seoImage} />
+      <meta property="og:site_name" content={siteName} />
+      
+      {/* Twitter */}
+      <meta name="twitter:card" content="summary_large_image" />
+      <meta name="twitter:url" content={url} />
+      <meta name="twitter:title" content={seoTitle} />
+      <meta name="twitter:description" content={seoDescription} />
+      <meta name="twitter:image" content={seoImage} />
+      
+      {/* Mobile meta */}
+      <meta name="viewport" content="width=device-width, initial-scale=1" />
+      <meta name="theme-color" content="#4a6cf7" />
+      <meta name="apple-mobile-web-app-capable" content="yes" />
+      <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+      
+      {/* Favicon */}
+      <link rel="icon" href="/favicon.ico" />
+      <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+      
+      {/* JSON-LD Structured Data */}
+      <script 
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationSchema) }}
+      />
+      
+      {breadcrumbsSchema && (
+        <script 
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbsSchema) }}
+        />
+      )}
+      
+      {productSchema && (
+        <script 
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(productSchema) }}
+        />
+      )}
+    </Head>
+  );
 };
 
 export default SEO; 
