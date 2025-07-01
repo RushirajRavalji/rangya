@@ -44,40 +44,45 @@ export default function ProductCard({ product, view = 'grid' }) {
     ? Math.round((1 - safeProduct.salePrice / safeProduct.price) * 100)
     : 0;
   
+  // Get all available sizes
+  const getAvailableSizes = () => {
+    if (!safeProduct.stock) return [];
+    return Object.keys(safeProduct.stock).filter(size => safeProduct.stock[size] > 0);
+  };
+  
   // Handle adding to cart with default size
   const handleAddToCart = (e) => {
     e.preventDefault();
     e.stopPropagation();
     
-    // Get the first available size or 'one-size'
-    const defaultSize = product.sizes 
-      ? Object.keys(product.sizes).find(size => product.sizes[size] > 0) || 'one-size'
-      : product.stock
-        ? Object.keys(product.stock).find(size => product.stock[size] > 0) || 'one-size'
-        : 'one-size';
+    // Get available sizes
+    const availableSizes = getAvailableSizes();
     
-    // Check if the product is in stock
-    const isInStock = product.sizes 
-      ? product.sizes[defaultSize] > 0
-      : product.stock
-        ? product.stock[defaultSize] > 0
-        : true;
-    
-    if (!isInStock) {
+    if (availableSizes.length === 0) {
       showNotification('This product is out of stock', 'error');
       return;
     }
     
-    addToCart({
+    const defaultSize = availableSizes[0];
+    
+    const cartProduct = {
       id: product.id,
-      name: product.name,
+      name: product.name_en || product.name,
+      name_en: product.name_en,
       price: product.salePrice || product.price,
+      originalPrice: product.price,
       image: product.images && product.images[0],
       size: defaultSize,
       quantity: 1
-    });
+    };
     
-    showNotification(`Added ${product.name} to cart`, 'success');
+    const result = addToCart(cartProduct, defaultSize, 1);
+    
+    if (result.success) {
+      showNotification(`${product.name_en || "Product"} added to cart`, 'success');
+    } else {
+      showNotification(result.error || 'Failed to add product to cart', 'error');
+    }
   };
   
   // Handle image load success
@@ -87,7 +92,7 @@ export default function ProductCard({ product, view = 'grid' }) {
 
   if (view === 'list') {
     return (
-      <div className="flex flex-col md:flex-row bg-white overflow-hidden">
+      <div className="flex flex-col md:flex-row bg-white overflow-hidden rounded-lg border border-gray-200">
         {/* Product Image */}
         <Link href={`/products/${safeProduct.slug}`} className="md:w-1/3 lg:w-1/4">
           <div className="relative aspect-square bg-gray-100">
@@ -173,7 +178,7 @@ export default function ProductCard({ product, view = 'grid' }) {
   // Default Grid View
   return (
     <div 
-      className="group relative bg-white rounded-lg shadow-sm overflow-hidden transition-all duration-300 hover:shadow-md"
+      className="group relative bg-white rounded-lg shadow-sm overflow-hidden transition-all duration-300 hover:shadow-md border border-gray-200"
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
@@ -198,6 +203,11 @@ export default function ProductCard({ product, view = 'grid' }) {
             onLoad={handleImageLoad}
             priority={false}
           />
+          
+          {/* Skeleton loader while image loads */}
+          {!imageLoaded && (
+            <div className="absolute inset-0 bg-gray-100 animate-pulse"></div>
+          )}
           
           {/* Hover Actions */}
           <div 
@@ -224,7 +234,7 @@ export default function ProductCard({ product, view = 'grid' }) {
       {/* Product Info */}
       <div className="p-4">
         <Link href={`/products/${safeProduct.slug}`} className="block">
-          <h3 className="text-sm font-medium text-gray-900 mb-1 line-clamp-1 hover:text-indigo-deep">
+          <h3 className="text-sm font-medium text-gray-900 mb-1 line-clamp-2 hover:text-indigo-deep h-10">
             {safeProduct.name_en}
           </h3>
         </Link>

@@ -209,15 +209,27 @@ export function CartProvider({ children }) {
       
       if (!product || !product.id) {
         console.error("Invalid product object:", product);
+        showNotification('Invalid product data', 'error');
         return { success: false, authRequired: false, error: "Invalid product" };
       }
+      
+      // Create a properly formatted item object
+      let newItem = {
+        id: product.id,
+        name: product.name_en || product.name || "Unknown Product",
+        slug: product.slug || "",
+        price: product.salePrice || product.price || 0,
+        originalPrice: product.price || 0,
+        image: product.images && product.images.length > 0 ? product.images[0] : null,
+        size,
+        quantity
+      };
       
       const existingItemIndex = cartItems.findIndex(
         item => item.id === product.id && item.size === size
       );
 
       let updatedCart;
-      let newItem;
 
       if (existingItemIndex !== -1) {
         // Update quantity if item exists
@@ -226,16 +238,6 @@ export function CartProvider({ children }) {
         lastAddedItemRef.current = { id: product.id, size };
       } else {
         // Add new item if it doesn't exist
-        newItem = {
-          id: product.id,
-          name: product.name_en || product.name || "Unknown Product",
-          slug: product.slug || "",
-          price: product.salePrice || product.price || 0,
-          originalPrice: product.price || 0,
-          image: product.images && product.images.length > 0 ? product.images[0] : null,
-          size,
-          quantity
-        };
         console.log("Creating new cart item:", newItem);
         updatedCart = [...cartItems, newItem];
         lastAddedItemRef.current = { id: product.id, size };
@@ -248,25 +250,16 @@ export function CartProvider({ children }) {
           console.error('Error tracking add to cart event:', error);
         }
       }
-
-      console.log("Updated cart:", updatedCart);
       
-      // Update state
+      // Update cart state
       setCartItems(updatedCart);
+      showNotification(`${newItem.name} (Size: ${size}) added to cart!`, 'success');
       
-      // Trigger cart update event
-      window.dispatchEvent(new CustomEvent('cartUpdated', { 
-        detail: { items: updatedCart, discount, promoCode } 
-      }));
-      
-      // Ensure we have a valid product name for the notification
-      const productName = product.name_en || product.name || "Product";
-      showNotification(`Added ${productName} to cart`, 'success');
-      
-      return { success: true, authRequired: false, cart: updatedCart };
+      return { success: true, authRequired: false };
     } catch (error) {
-      console.error("Error adding to cart:", error);
-      return { success: false, authRequired: false, error: error.message };
+      console.error('Error adding to cart:', error);
+      showNotification('Failed to add item to cart', 'error');
+      return { success: false, error: error.message };
     }
   };
 

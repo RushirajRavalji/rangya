@@ -6,6 +6,7 @@ import { SessionProvider } from 'next-auth/react';
 import { AuthProvider } from '../contexts/AuthContext';
 import { CartProvider } from '../contexts/CartContext';
 import { NotificationProvider } from '../contexts/NotificationContext';
+import { AdminNotificationProvider } from '../contexts/AdminNotificationContext';
 import Head from 'next/head';
 import Script from 'next/script';
 import { onAuthStateChanged } from 'firebase/auth';
@@ -40,7 +41,11 @@ function MyApp({ Component, pageProps: { session, ...pageProps } }) {
     // Otherwise, use default layouts based on path
     if (pathname.startsWith('/admin')) {
       // Admin pages now handle their own layout
-      return <Component {...pageProps} />;
+      return (
+        <AdminNotificationProvider>
+          <Component {...pageProps} />
+        </AdminNotificationProvider>
+      );
     } else if (pathname.startsWith('/account')) {
       return (
         <AccountLayout>

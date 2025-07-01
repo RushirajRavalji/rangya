@@ -73,6 +73,8 @@ export default function OrderDetail() {
         // Ensure consistent customer data
         const enhancedOrder = {
           ...orderData,
+          // Store original status for reverting on error
+          originalStatus: orderData.status,
           // Make sure we have consistent customer information
           customer: orderData.customer || {
             name: 'N/A',
@@ -165,12 +167,21 @@ export default function OrderDetail() {
   const handleStatusChange = async (newStatus) => {
     try {
       setStatusLoading(true);
-      await updateOrderStatus(id, newStatus);
+      
+      // Immediately update UI for better user experience
       setOrder(prev => ({ ...prev, status: newStatus }));
+      
+      // Update in Firebase
+      await updateOrderStatus(id, newStatus);
+      
       showNotification(`Order status updated to ${newStatus}`, 'success');
     } catch (err) {
       console.error('Error updating order status:', err);
-      showNotification('Failed to update order status', 'error');
+      
+      // Revert UI change on error
+      setOrder(prev => ({ ...prev, status: prev.originalStatus || prev.status }));
+      
+      showNotification(`Failed to update order status: ${err.message || 'Unknown error'}`, 'error');
     } finally {
       setStatusLoading(false);
     }

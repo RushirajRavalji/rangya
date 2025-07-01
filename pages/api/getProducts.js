@@ -11,10 +11,17 @@ const limiter = rateLimit({
 // Map for normalizing category names
 const categoryMappings = {
   'jeans': 'Jeans',
+  'pants': 'Jeans',
+  'jean': 'Jeans',
+  'pant': 'Jeans',
   'shirts': 'Shirts',
+  'shirt': 'Shirts',
   't-shirts': 'T-shirts',
   'tshirts': 'T-shirts',
-  'accessories': 'Accessories'
+  't-shirt': 'T-shirts',
+  'tshirt': 'T-shirts',
+  'accessories': 'Accessories',
+  'accessory': 'Accessories'
 };
 
 // Helper function to normalize category names
@@ -22,7 +29,24 @@ const normalizeCategory = (category) => {
   if (!category) return null;
   
   const lowercaseCategory = category.toLowerCase();
-  return categoryMappings[lowercaseCategory] || category;
+  
+  // Check for direct mapping first
+  if (categoryMappings[lowercaseCategory]) {
+    return categoryMappings[lowercaseCategory];
+  }
+  
+  // If no direct mapping, check for partial matches
+  if (lowercaseCategory.includes('shirt') && !lowercaseCategory.includes('t-shirt') && !lowercaseCategory.includes('tshirt')) {
+    return 'Shirts';
+  } else if (lowercaseCategory.includes('t-shirt') || lowercaseCategory.includes('tshirt')) {
+    return 'T-shirts';
+  } else if (lowercaseCategory.includes('jean') || lowercaseCategory.includes('pant')) {
+    return 'Jeans';
+  } else if (lowercaseCategory.includes('accessor')) {
+    return 'Accessories';
+  }
+  
+  return category; // Return original if no match
 };
 
 export default async function handler(req, res) {

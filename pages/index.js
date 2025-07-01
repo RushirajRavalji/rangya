@@ -34,7 +34,11 @@ export default function Home({ initialProducts }) {
         // Try direct Firebase fetch first instead of API route
         try {
           console.log("Attempting direct Firebase fetch...");
-          const result = await getProducts({ limit: 15, sortBy: 'createdAt', sortOrder: 'desc' });
+          const result = await getProducts({ 
+            limit: 8, // Reduced from 15 to 8 to match getStaticProps
+            sortBy: 'createdAt', 
+            sortOrder: 'desc' 
+          });
           
           if (result && result.products && result.products.length > 0) {
             console.log(`Successfully loaded ${result.products.length} products from Firebase`);
@@ -50,7 +54,7 @@ export default function Home({ initialProducts }) {
         
         // If Firebase direct fetch fails, try API route as fallback
         console.log("Attempting API route fetch...");
-        const response = await fetch('/api/getProducts');
+        const response = await fetch('/api/getProducts?limit=8&sortBy=createdAt&sortOrder=desc');
         
         if (!response.ok) {
           throw new Error(`API Error: ${response.status}`);
@@ -83,20 +87,32 @@ export default function Home({ initialProducts }) {
     setRetryCount(prev => prev + 1);
   };
 
-  // Map category values to display names
-  const categoryMapping = {
-    'shirts': 'Denim Shirts',
-    'tshirts': 'Denim T-Shirts',
-    'pants': 'Denim Pants',
-    'jeans': 'Jeans'
+  // Normalize category values for consistent filtering
+  const normalizeCategoryName = (category) => {
+    if (!category) return '';
+    
+    const lcCategory = category.toLowerCase();
+    if (lcCategory === 'shirts' || lcCategory.includes('shirt') && !lcCategory.includes('t-shirt') && !lcCategory.includes('tshirt')) {
+      return 'shirts';
+    } else if (lcCategory === 't-shirts' || lcCategory === 'tshirts' || lcCategory.includes('t-shirt') || lcCategory.includes('tshirt')) {
+      return 't-shirts';
+    } else if (lcCategory === 'jeans' || lcCategory.includes('jean') || lcCategory.includes('pant')) {
+      return 'jeans';
+    } else if (lcCategory.includes('accessor')) {
+      return 'accessories';
+    }
+    return lcCategory;
   };
 
+  // Filter products by category
   const filteredProducts = activeCategory === 'all' 
     ? products 
-    : products.filter(product => 
-        product.category && 
-        product.category.toLowerCase() === activeCategory.toLowerCase()
-      );
+    : products.filter(product => {
+        if (!product.category) return false;
+        const normalizedProductCategory = normalizeCategoryName(product.category);
+        const normalizedActiveCategory = normalizeCategoryName(activeCategory);
+        return normalizedProductCategory === normalizedActiveCategory;
+      });
 
   const handleAddToCart = (e, product) => {
     e.preventDefault();
@@ -218,7 +234,7 @@ export default function Home({ initialProducts }) {
               <button
                 key={category}
                 className={`px-4 py-2 rounded-full text-sm font-medium ${
-                  activeCategory === category.toLowerCase() 
+                  normalizeCategoryName(activeCategory) === normalizeCategoryName(category)
                     ? 'bg-indigo-deep text-white' 
                     : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
                 }`}
@@ -268,16 +284,42 @@ export default function Home({ initialProducts }) {
 
 export async function getStaticProps() {
   try {
-    // Fetch initial products for SSR - limit to 15 products
+    // Fetch initial products for SSR - limit to 8 products to reduce data size
     const { products } = await getProducts({ 
-      limit: 15,
-      sortBy: 'popularity',
+      limit: 8,
+      sortBy: 'createdAt',
       sortOrder: 'desc'
     });
     
+    // Convert non-serializable objects and only include essential fields to reduce data size
+    const serializedProducts = products ? products.map(product => {
+      // Only include essential fields needed for the homepage
+      const essentialFields = {
+        id: product.id,
+        name: product.name || product.name_en || '',
+        name_en: product.name_en || '',
+        slug: product.slug || '',
+        price: product.price || 0,
+        salePrice: product.salePrice || null,
+        category: product.category || '',
+        stock: product.stock || {},
+        images: Array.isArray(product.images) ? 
+          // Only include the first 2 images to reduce data size
+          product.images.slice(0, 2) : 
+          []
+      };
+      
+      // Convert timestamp fields to ISO strings if they exist
+      if (product.createdAt && typeof product.createdAt.toDate === 'function') {
+        essentialFields.createdAt = product.createdAt.toDate().toISOString();
+        }
+      
+      return essentialFields;
+    }) : [];
+    
     return {
       props: {
-        initialProducts: products || []
+        initialProducts: serializedProducts
       },
       // Revalidate every hour
       revalidate: 3600

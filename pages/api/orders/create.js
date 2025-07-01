@@ -146,7 +146,7 @@ const updateProductStock = async (items) => {
         
         // If stock is low, add a notification for admin
         if (newSizeStock <= 3) {
-          const notificationsRef = collection(db, 'admin_notifications');
+          const notificationsRef = collection(db, 'adminNotifications');
           transaction.set(doc(notificationsRef), {
             type: 'low_stock',
             productId: item.id,
@@ -168,7 +168,7 @@ const updateProductStock = async (items) => {
         
         // If stock is low, add a notification for admin
         if (newStock <= product.lowStockThreshold || newStock <= 5) {
-          const notificationsRef = collection(db, 'admin_notifications');
+          const notificationsRef = collection(db, 'adminNotifications');
           transaction.set(doc(notificationsRef), {
             type: 'low_stock',
             productId: item.id,
@@ -273,6 +273,7 @@ const createOrderHandler = async (req, res) => {
         status: orderData.payment.method === 'cod' ? 'pending' : 'processing'
       },
       status: orderData.payment.method === 'cod' ? 'pending' : 'processing',
+      isRead: false,
       ...totals,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp()

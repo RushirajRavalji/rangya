@@ -34,6 +34,45 @@ const getProductsRef = () => {
 };
 
 /**
+ * Helper function to convert Firebase timestamps to ISO strings for JSON compatibility
+ * @param {Object} data - Object that may contain Firebase timestamps
+ * @returns {Object} - Object with Firebase timestamps converted to ISO strings
+ */
+const convertTimestamps = (data) => {
+  if (!data) return data;
+  
+  const result = { ...data };
+  
+  Object.keys(result).forEach(key => {
+    const val = result[key];
+    
+    // Check if it's a Firebase Timestamp
+    if (val && typeof val.toDate === 'function') {
+      result[key] = val.toDate().toISOString();
+    } 
+    // Check if it's an object that might contain timestamps
+    else if (val && typeof val === 'object' && !Array.isArray(val)) {
+      result[key] = convertTimestamps(val);
+    } 
+    // Handle arrays that might contain objects with timestamps
+    else if (Array.isArray(val)) {
+      result[key] = val.map(item => {
+        if (item && typeof item === 'object') {
+          return convertTimestamps(item);
+        }
+        return item;
+      });
+    }
+    // Handle undefined values
+    else if (val === undefined) {
+      result[key] = null;
+    }
+  });
+  
+  return result;
+};
+
+/**
  * Get all products with optional filtering and pagination
  * @param {Object} options - Query options
  * @param {string} options.category - Filter by category
@@ -72,12 +111,16 @@ export async function getProducts(options = {}) {
       
       // Apply category filter
       if (options.category) {
-        // Convert category names to match our format (first letter capitalized, rest lowercase)
+        // Normalize category mapping for consistent querying
         const categoryMappings = {
           'jeans': 'Jeans',
+          'pants': 'Jeans',  // Map pants to Jeans category
           'shirts': 'Shirts',
+          'shirt': 'Shirts', // Map shirt to Shirts category
           't-shirts': 'T-shirts',
-          'tshirts': 'T-shirts',
+          'tshirts': 'T-shirts', // Map tshirts to T-shirts category
+          't-shirt': 'T-shirts', // Map t-shirt to T-shirts category
+          'tshirt': 'T-shirts', // Map tshirt to T-shirts category
           'accessories': 'Accessories'
         };
         
@@ -132,24 +175,45 @@ export async function getProducts(options = {}) {
     try {
       querySnapshot.forEach((doc) => {
         const data = doc.data();
+        
+        // Normalize category if present
+        let normalizedCategory = data.category;
+        if (data.category) {
+          // Ensure proper category naming
+          const lcCategory = data.category.toLowerCase();
+          if (lcCategory.includes('shirt') && !lcCategory.includes('t-shirt') && !lcCategory.includes('tshirt')) {
+            normalizedCategory = 'Shirts';
+          } else if (lcCategory.includes('t-shirt') || lcCategory.includes('tshirt')) {
+            normalizedCategory = 'T-shirts';
+          } else if (lcCategory.includes('jean') || lcCategory.includes('pant')) {
+            normalizedCategory = 'Jeans';
+          } else if (lcCategory.includes('accessor')) {
+            normalizedCategory = 'Accessories';
+          }
+        }
+        
         // Ensure required fields exist
         const product = {
           id: doc.id,
           name_en: data.name_en || "Unnamed Product",
           price: data.price || 0,
-          category: data.category || "Uncategorized",
+          category: normalizedCategory || "Uncategorized",
           images: Array.isArray(data.images) ? data.images : [],
           stock: data.stock || {},
-          ...data
+          ...data,
+          category: normalizedCategory || data.category || "Uncategorized" // Make sure normalized category gets used
         };
-        products.push(product);
+        
+        // Convert Firebase timestamps to ISO strings
+        const processedProduct = convertTimestamps(product);
+        products.push(processedProduct);
       });
       console.log(`Processed ${products.length} products`);
     } catch (error) {
       console.error("Error processing query results:", error);
     }
     
-    // Get the last document for pagination
+    // Get the last document for pagination (but don't convert it)
     const lastDoc = querySnapshot.docs.length > 0 ? 
       querySnapshot.docs[querySnapshot.docs.length - 1] : 
       null;

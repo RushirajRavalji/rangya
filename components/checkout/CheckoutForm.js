@@ -171,13 +171,50 @@ const CheckoutForm = ({ onOrderPlaced, onError }) => {
   
   // Handle shipping address change
   const handleShippingAddressChange = (field, value) => {
-    setFormData(prev => ({
-      ...prev,
+    setFormData({
+      ...formData,
       shippingAddress: {
-        ...prev.shippingAddress,
+        ...formData.shippingAddress,
         [field]: value
       }
-    }));
+    });
+    
+    // Auto-detect city and state when postal code is entered
+    if (field === 'postalCode' && value.length === 6) {
+      // Fetch location data based on postal code
+      fetchPostalCodeInfo(value);
+    }
+  };
+  
+  // Function to fetch postal code information
+  const fetchPostalCodeInfo = async (postalCode) => {
+    try {
+      setLoading(true);
+      // Call the India Post API or a third-party postal code API
+      const response = await fetch(`https://api.postalpincode.in/pincode/${postalCode}`);
+      const data = await response.json();
+      
+      if (data && data[0]?.Status === "Success" && data[0]?.PostOffice?.length > 0) {
+        const postOffice = data[0].PostOffice[0];
+        setFormData({
+          ...formData,
+          shippingAddress: {
+            ...formData.shippingAddress,
+            city: postOffice.Block || postOffice.Name,
+            state: postOffice.State,
+            country: "India"
+          }
+        });
+        showNotification("Address details loaded successfully", "success");
+      } else {
+        showNotification("Invalid postal code. Please enter a valid postal code.", "error");
+      }
+    } catch (error) {
+      console.error("Error fetching postal code data:", error);
+      showNotification("Failed to fetch location data. Please enter manually.", "error");
+    } finally {
+      setLoading(false);
+    }
   };
   
   // Validate form

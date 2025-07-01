@@ -28,8 +28,8 @@ export default function Contact() {
                     <div className="ml-3">
                       <h3 className="text-lg font-medium">Email</h3>
                       <p className="mt-1 text-gray-700">
-                        <a href="mailto:support@rangadenim.com" className="hover:text-indigo-600">
-                          support@rangadenim.com
+                        <a href="mailto:ns421602@gmail.com" className="hover:text-indigo-600">
+                          ns421602@gmail.com
                         </a>
                       </p>
                     </div>
@@ -42,8 +42,8 @@ export default function Contact() {
                     <div className="ml-3">
                       <h3 className="text-lg font-medium">Phone</h3>
                       <p className="mt-1 text-gray-700">
-                        <a href="tel:+919876543210" className="hover:text-indigo-600">
-                          +91 98765 43210
+                        <a href="tel:+919649617747" className="hover:text-indigo-600">
+                          +91 9649617747
                         </a>
                       </p>
                     </div>
@@ -56,9 +56,9 @@ export default function Contact() {
                     <div className="ml-3">
                       <h3 className="text-lg font-medium">Visit Us</h3>
                       <p className="mt-1 text-gray-700">
-                        Ranga Flagship Store<br />
-                        123 Fashion Street<br />
-                        Mumbai, Maharashtra 400001
+                        Shop no 11<br />
+                        Suprabhat apartment<br />
+                        Surat, Gujarat
                       </p>
                     </div>
                   </div>

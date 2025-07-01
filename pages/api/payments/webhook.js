@@ -1,6 +1,8 @@
 import { buffer } from 'micro';
 import { db } from '../../../utils/firebase';
 import { doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { createError } from '../../../utils/errorHandler';
+import { updateOrderStatus as serviceUpdateOrderStatus } from '../../../utils/orderService';
 
 /**
  * Create a standardized error object
@@ -106,32 +108,18 @@ export const updateOrderStatus = async (orderId, status, paymentDetails) => {
       paymentStatus = statusMapping[status].paymentStatus;
     }
 
-    // Prepare update data
-    const updateData = {
-      status: orderStatus,
+    // Use the orderService's updateOrderStatus function which no longer validates transitions
+    const additionalData = {
       'payment.status': paymentStatus,
       'payment.details': {
         ...(orderData.payment?.details || {}),
         ...paymentDetails,
         updatedAt: serverTimestamp()
-      },
-      updatedAt: serverTimestamp()
+      }
     };
 
-    // Update order document
-    await updateDoc(orderRef, updateData);
-
-    // Also update in user's orders subcollection if userId exists
-    if (orderData.userId) {
-      const userOrderRef = doc(db, 'users', orderData.userId, 'orders', orderId);
-      const userOrderDoc = await getDoc(userOrderRef);
-
-      if (userOrderDoc.exists()) {
-        await updateDoc(userOrderRef, updateData);
-      } else {
-        console.warn(`User order document not found for user ${orderData.userId}, order ${orderId}`);
-      }
-    }
+    // Update the order using the service function
+    await serviceUpdateOrderStatus(orderId, orderStatus, additionalData);
 
     console.log(`Order ${orderId} status updated to ${orderStatus}, payment status: ${paymentStatus}`);
     

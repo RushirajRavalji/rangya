@@ -131,6 +131,12 @@ try {
     storage = getStorage(app);
     functions = getFunctions(app);
     
+    // Debug Firebase Firestore initialization
+    console.log('Firestore db object initialized:', db);
+    console.log('Firestore collection function available:', typeof collection === 'function');
+    console.log('Firestore where function available:', typeof where === 'function');
+    console.log('Firestore query function available:', typeof query === 'function');
+    
     // Set auth persistence
     if (typeof window !== 'undefined') {
       setPersistence(auth, browserLocalPersistence)

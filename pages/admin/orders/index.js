@@ -55,6 +55,8 @@ export default function AdminOrders() {
           if (!ordersMap[order.id]) {
             ordersMap[order.id] = {
               ...order,
+              // Store original status for reverting on error
+              originalStatus: order.status,
               // Make sure customer data is consistent
               customer: {
                 name: order.customer?.name || 'N/A',
@@ -67,6 +69,7 @@ export default function AdminOrders() {
         // Convert back to array
         const uniqueOrders = Object.values(ordersMap);
         setOrders(uniqueOrders);
+        setTotalPages(Math.ceil(uniqueOrders.length / ordersPerPage));
         
         if (uniqueOrders.length === 0) {
           console.log('No orders found in the response');
@@ -82,7 +85,7 @@ export default function AdminOrders() {
           }
         }
         
-        setTotalPages(Math.ceil(uniqueOrders.length / ordersPerPage));
+        setCurrentPage(1);
       } catch (err) {
         console.error('=== ERROR: Failed to fetch orders ===', err);
         let errorMessage = 'Failed to load orders';
@@ -117,7 +120,7 @@ export default function AdminOrders() {
   };
 
   // Filter orders by search term and status
-  const filteredOrders = orders.filter(order => {
+  const filteredOrdersList = orders.filter(order => {
     const searchLower = searchTerm.toLowerCase();
     const matchesSearch = 
       order.id.toLowerCase().includes(searchLower) ||
@@ -130,10 +133,15 @@ export default function AdminOrders() {
   });
 
   // Paginate orders
-  const paginatedOrders = filteredOrders.slice(
+  const paginatedOrders = filteredOrdersList.slice(
     (currentPage - 1) * ordersPerPage,
     currentPage * ordersPerPage
   );
+
+  // Update total pages when filteredOrdersList changes
+  useEffect(() => {
+    setTotalPages(Math.ceil(filteredOrdersList.length / ordersPerPage));
+  }, [filteredOrdersList, ordersPerPage]);
 
   // Handle status update
   const handleStatusUpdate = async () => {
@@ -143,14 +151,16 @@ export default function AdminOrders() {
       setProcessing(true);
       setError(null);
       
-      await updateOrderStatus(selectedOrder.id, newStatus);
-      
-      // Update local state
+      // Update local state immediately for better UX
+      const originalStatus = selectedOrder.status;
       setOrders(prevOrders => 
         prevOrders.map(order => 
           order.id === selectedOrder.id ? { ...order, status: newStatus } : order
         )
       );
+      
+      // Update in Firebase
+      await updateOrderStatus(selectedOrder.id, newStatus);
       
       setSuccess(`Order status updated to ${newStatus}`);
       setShowStatusModal(false);
@@ -161,7 +171,15 @@ export default function AdminOrders() {
       }, 3000);
     } catch (err) {
       console.error('Error updating order status:', err);
-      setError('Failed to update order status');
+      
+      // Revert UI change on error
+      setOrders(prevOrders => 
+        prevOrders.map(order => 
+          order.id === selectedOrder.id ? { ...order, status: selectedOrder.originalStatus || selectedOrder.status } : order
+        )
+      );
+      
+      setError(`Failed to update order status: ${err.message || 'Unknown error'}`);
     } finally {
       setProcessing(false);
     }
@@ -362,9 +380,9 @@ export default function AdminOrders() {
           <p className="text-sm text-gray-700">
             Showing <span className="font-medium">{((currentPage - 1) * ordersPerPage) + 1}</span> to{' '}
             <span className="font-medium">
-              {Math.min(currentPage * ordersPerPage, filteredOrders.length)}
+              {Math.min(currentPage * ordersPerPage, filteredOrdersList.length)}
             </span>{' '}
-            of <span className="font-medium">{filteredOrders.length}</span> orders
+            of <span className="font-medium">{filteredOrdersList.length}</span> orders
           </p>
           
           <div className="flex space-x-2">

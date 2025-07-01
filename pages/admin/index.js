@@ -31,7 +31,8 @@ import {
   FiArrowDown,
   FiShoppingCart,
   FiUserPlus,
-  FiEdit
+  FiEdit,
+  FiBell
 } from 'react-icons/fi';
 import AdminLayout from '../../components/layout/AdminLayout';
 
@@ -274,7 +275,7 @@ export default function AdminDashboard() {
   return (
     <AdminLayout title="Dashboard">
       <Head>
-        <title>Admin Dashboard</title>
+        <title>Admin Dashboard | Rangya</title>
       </Head>
       
       {loading ? (
@@ -351,7 +352,11 @@ export default function AdminDashboard() {
           </div>
           
           {/* Add New Product Button (Prominent) */}
-          <div className="flex justify-end mb-8">
+          <div className="flex justify-end mb-8 space-x-4">
+            <Link href="/admin/test/notifications" className="flex items-center bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-md font-medium transition-colors">
+              <FiBell className="mr-2" /> Test Notifications
+            </Link>
+            
             <Link href="/admin/products/new" className="flex items-center bg-orange-500 hover:bg-orange-600 text-white px-6 py-3 rounded-md font-medium transition-colors">
               <FiPlusCircle className="mr-2" /> Add New Product
             </Link>

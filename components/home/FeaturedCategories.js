@@ -15,7 +15,7 @@ const categories = [
     description: 'Casual and formal denim shirts for all occasions'
   },
   {
-    id: 'tshirts',
+    id: 't-shirts',
     name: 'T-shirts',
     image: 'https://images.unsplash.com/photo-1576566588028-4147f3842f27?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&h=800',
     description: 'Stylish denim t-shirts to complete your look'
