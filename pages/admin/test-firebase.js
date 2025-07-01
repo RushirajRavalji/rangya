@@ -2,6 +2,7 @@ import { useState } from 'react';
 import Head from 'next/head';
 import { FiDatabase, FiRefreshCw, FiPlus, FiCheck, FiAlertTriangle } from 'react-icons/fi';
 import AdminLayout from '../../components/layout/AdminLayout';
+import { AdminNotificationProvider } from '../../contexts/AdminNotificationContext';
 
 export default function TestFirebase() {
   const [loading, setLoading] = useState(false);
@@ -160,5 +161,9 @@ export default function TestFirebase() {
 }
 
 TestFirebase.getLayout = function getLayout(page) {
-  return <AdminLayout>{page}</AdminLayout>;
+  return (
+    <AdminNotificationProvider>
+      <AdminLayout>{page}</AdminLayout>
+    </AdminNotificationProvider>
+  );
 }; 

@@ -4,20 +4,6 @@ import { doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { createError } from '../../../utils/errorHandler';
 import { updateOrderStatus as serviceUpdateOrderStatus } from '../../../utils/orderService';
 
-/**
- * Create a standardized error object
- * @param {string} code - Error code
- * @param {string} message - Error message
- * @param {Object} [details] - Additional error details
- * @returns {Error} - Error object with code, message and details
- */
-export const createError = (code, message, details = {}) => {
-  const error = new Error(message);
-  error.code = code;
-  error.details = details || {};
-  return error;
-};
-
 // Disable body parsing, we need the raw body for signature verification
 export const config = {
   api: {
