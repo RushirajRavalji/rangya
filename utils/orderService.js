@@ -24,6 +24,7 @@ import { updateProductStock } from './productService';
 import { createError } from './errorHandler';
 import { sendOrderConfirmationEmail, sendOrderStatusUpdateEmail, sendOrderShippedEmail } from './emailService';
 import { getUserById } from './userService';
+import { createOrderStatusNotification } from './orderUtils';
 
 // Collection references as functions to avoid initialization issues
 const getOrdersRef = () => {
@@ -53,6 +54,9 @@ const ORDER_STATUSES = {
 const VALID_STATUS_TRANSITIONS = {
   [ORDER_STATUSES.PENDING]: [
     ORDER_STATUSES.PAYMENT_PROCESSING,
+    ORDER_STATUSES.PROCESSING,
+    ORDER_STATUSES.SHIPPED,
+    ORDER_STATUSES.DELIVERED,
     ORDER_STATUSES.CANCELLED
   ],
   [ORDER_STATUSES.PAYMENT_PROCESSING]: [
@@ -224,12 +228,41 @@ export const createOrder = async (orderData, userId) => {
           userId,
           status: 'pending',
           paymentStatus: 'pending',
+          isRead: false, // Mark as unread for notifications
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
           processedAt: serverTimestamp() // Track when the order was processed
         };
         
         transaction.set(orderRef, newOrder);
+        
+        // Create notification for new order
+        const orderNotificationRef = doc(collection(db, 'adminNotifications'));
+        transaction.set(orderNotificationRef, {
+          id: orderNotificationRef.id,
+          type: 'order',
+          title: 'New Order Received',
+          message: `New order #${orderNumber} has been placed`,
+          orderId: orderRef.id,
+          orderNumber: orderNumber,
+          total: orderData.totalAmount || orderData.total || 0,
+          createdAt: serverTimestamp(),
+          read: false
+        });
+        
+        // Create notification for low stock items if any
+        if (lowStockItems.length > 0) {
+          const notificationRef = doc(collection(db, 'adminNotifications'));
+          transaction.set(notificationRef, {
+            id: notificationRef.id,
+            type: 'low_stock',
+            title: 'Low Stock Alert',
+            message: `${lowStockItems.length} item(s) are running low on stock after order ${orderNumber}`,
+            items: lowStockItems,
+            createdAt: serverTimestamp(),
+            read: false
+          });
+        }
         
         // Update stock for all products
         for (const [productId, stockData] of Object.entries(stockUpdates)) {
@@ -245,20 +278,6 @@ export const createOrder = async (orderData, userId) => {
               totalSold: increment(item.quantity)
             });
           }
-        }
-
-        // Create notification for low stock items
-        if (lowStockItems.length > 0) {
-          const notificationRef = doc(collection(db, 'adminNotifications'));
-          transaction.set(notificationRef, {
-            id: notificationRef.id,
-            type: 'low_stock',
-            title: 'Low Stock Alert',
-            message: `${lowStockItems.length} item(s) are running low on stock after order ${orderNumber}`,
-            items: lowStockItems,
-            createdAt: serverTimestamp(),
-            read: false
-          });
         }
         
         // Return the created order
@@ -277,26 +296,16 @@ export const createOrder = async (orderData, userId) => {
         console.log(`Retrying transaction due to concurrent modification (attempt ${retryCount}/${MAX_RETRIES})`);
         // Wait a bit before retrying (exponential backoff)
         await new Promise(resolve => setTimeout(resolve, Math.pow(2, retryCount) * 100));
-        continue;
+      } else {
+        // For other errors, don't retry
+        break;
       }
-      
-      // For other errors, check if it has unavailable items
-      if (error.cause?.unavailableItems) {
-        throw {
-          message: 'Some items are not available',
-          unavailableItems: error.cause.unavailableItems,
-          code: 'STOCK_ERROR'
-        };
-      }
-      
-      // Rethrow other errors
-      throw error;
     }
   }
   
-  // If we've exhausted retries
-  console.error(`Failed to create order after ${MAX_RETRIES} attempts:`, lastError);
-  throw new Error('Failed to create order due to concurrent modifications. Please try again.');
+  // If we've exhausted all retries or encountered a non-retriable error
+  console.error('Order creation failed after retries:', lastError);
+  throw lastError || new Error('Failed to create order after multiple attempts');
 };
 
 /**
@@ -851,10 +860,7 @@ export const updateOrderStatus = async (orderId, status, additionalData = {}) =>
     const order = orderDoc.data();
     const currentStatus = order.status;
     
-    // Validate status transition
-    if (!isValidStatusTransition(currentStatus, status)) {
-      throw createError('VALIDATION', `Invalid status transition from ${currentStatus} to ${status}`);
-    }
+    // Remove status transition validation - allow any status change
     
     // Update order
     const updateData = {
@@ -870,10 +876,23 @@ export const updateOrderStatus = async (orderId, status, additionalData = {}) =>
       ...additionalData
     };
     
+    // If marking as read is part of the additional data
+    if (additionalData.isRead !== undefined) {
+      updateData.isRead = additionalData.isRead;
+    }
+    
     await updateDoc(orderRef, updateData);
     
     // Handle stock updates based on status changes
     await handleStockForStatusChange(order, status);
+    
+    // Create status update notification using the utility function
+    await createOrderStatusNotification(
+      orderId,
+      status,
+      order.orderNumber,
+      order.totalAmount
+    );
     
     // Get updated order
     const updatedOrderDoc = await getDoc(orderRef);
@@ -992,7 +1011,7 @@ const confirmStockReservation = async (items, orderId) => {
         
         // Create low stock notification if needed
         if (newStock <= (product.lowStockThreshold || 5)) {
-          const notificationsRef = collection(db, 'admin_notifications');
+          const notificationsRef = collection(db, 'adminNotifications');
           transaction.set(doc(notificationsRef), {
             type: 'low_stock',
             productId: item.productId,
@@ -1246,6 +1265,73 @@ const normalizeShippingAddress = (addressData) => {
     country: addressData.country || 'India',
     phone: addressData.phone || ''
   };
+};
+
+/**
+ * Create a test order for notification testing
+ * @returns {Promise<Object>} - Created test order
+ */
+export const createTestOrder = async () => {
+  try {
+    // Generate a random order number
+    const timestamp = Date.now();
+    const randomPart = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+    const orderNumber = `ORD-${timestamp}-${randomPart}`;
+    
+    // Create a test customer
+    const customerNames = ['John Doe', 'Jane Smith', 'Alex Johnson', 'Maria Garcia', 'Raj Patel'];
+    const randomName = customerNames[Math.floor(Math.random() * customerNames.length)];
+    
+    // Generate random total
+    const randomTotal = Math.floor(Math.random() * 10000) + 500; // Between 500 and 10500
+    
+    // Create the order document
+    const orderRef = doc(collection(db, 'orders'));
+    
+    const testOrder = {
+      id: orderRef.id,
+      orderNumber,
+      customer: {
+        name: randomName,
+        email: `${randomName.toLowerCase().replace(' ', '.')}@example.com`
+      },
+      shippingAddress: {
+        fullName: randomName,
+        address: '123 Test Street',
+        city: 'Test City',
+        state: 'Test State',
+        postalCode: '12345',
+        country: 'India'
+      },
+      totalAmount: randomTotal,
+      status: 'pending',
+      paymentStatus: 'pending',
+      isRead: false, // Mark as unread for notifications
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      items: [
+        {
+          id: `product-${Math.floor(Math.random() * 1000)}`,
+          name: 'Test Product',
+          price: randomTotal / 2,
+          quantity: 2,
+          size: 'M'
+        }
+      ]
+    };
+    
+    await setDoc(orderRef, testOrder);
+    
+    console.log('Test order created:', orderRef.id);
+    
+    return {
+      ...testOrder,
+      id: orderRef.id
+    };
+  } catch (error) {
+    console.error('Error creating test order:', error);
+    throw error;
+  }
 };
 
 export default {

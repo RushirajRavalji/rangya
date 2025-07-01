@@ -88,6 +88,11 @@ service cloud.firestore {
       allow read, write: if isAdmin();
     }
     
+    // Admin notifications
+    match /adminNotifications/{notificationId} {
+      allow read, write: if isAdmin();
+    }
+    
     // Default deny
     match /{document=**} {
       allow read, write: if false;

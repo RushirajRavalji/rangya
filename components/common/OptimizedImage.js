@@ -88,6 +88,17 @@ const OptimizedImage = ({
     }
   }
 
+  // Extract fetchPriority from rest props or imgProps to handle it properly
+  const { fetchPriority, ...restProps } = rest;
+  const { fetchPriority: imgFetchPriority, ...restImgProps } = imgProps;
+  
+  // Create properly cased fetchpriority prop
+  const properImgProps = {
+    ...restImgProps,
+    ...(fetchPriority && { fetchpriority: fetchPriority }),
+    ...(imgFetchPriority && { fetchpriority: imgFetchPriority })
+  };
+
   return (
     <div
       className={`image-container ${className} ${!isLoaded ? 'image-loading' : 'image-loaded'}`}
@@ -97,7 +108,7 @@ const OptimizedImage = ({
         width: width ? `${width}px` : '100%',
         height: height ? `${height}px` : 'auto'
       }}
-      {...rest}
+      {...restProps}
     >
       <Image
         src={optimizedSrc}
@@ -118,7 +129,7 @@ const OptimizedImage = ({
           transition: 'opacity 0.3s ease',
           opacity: isLoaded ? 1 : 0
         }}
-        {...imgProps}
+        {...properImgProps}
       />
       
       {/* Loading indicator */}

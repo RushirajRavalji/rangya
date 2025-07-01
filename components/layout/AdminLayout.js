@@ -10,10 +10,13 @@ import {
   FiShoppingBag, 
   FiUsers, 
   FiLogOut,
-  FiImage
+  FiImage,
+  FiBell
 } from 'react-icons/fi';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNotification } from '../../contexts/NotificationContext';
+
+import AdminNotifications from '../admin/AdminNotifications';
 
 export default function AdminLayout({ children, title }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -177,14 +180,19 @@ export default function AdminLayout({ children, title }) {
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Top Bar */}
-        <header className="sticky top-0 z-30 bg-white shadow-sm h-16 flex items-center px-4">
-          <button 
-            className="lg:hidden text-gray-600 hover:text-gray-900"
-            onClick={() => setSidebarOpen(true)}
-          >
-            <FiMenu size={24} />
-          </button>
-          <h1 className="ml-4 lg:ml-0 text-xl font-semibold text-gray-800">{title || 'Admin Dashboard'}</h1>
+        <header className="sticky top-0 z-30 bg-white shadow-sm h-16 flex items-center justify-between px-4">
+          <div className="flex items-center">
+            <button 
+              className="lg:hidden text-gray-600 hover:text-gray-900"
+              onClick={() => setSidebarOpen(true)}
+            >
+              <FiMenu size={24} />
+            </button>
+            <h1 className="ml-4 lg:ml-0 text-xl font-semibold text-gray-800">{title || 'Admin Dashboard'}</h1>
+          </div>
+          <div className="flex items-center">
+            <AdminNotifications />
+          </div>
         </header>
 
         {/* Content */}

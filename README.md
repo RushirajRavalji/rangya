@@ -180,3 +180,20 @@ For support, email support@rangya.com or open an issue on GitHub.
 - [Firebase](https://firebase.google.com/)
 - [Tailwind CSS](https://tailwindcss.com/)
 - [React Icons](https://react-icons.github.io/react-icons/)
+
+## Notifications
+
+For admin notifications to play a sound when new orders arrive, please add a sound file at:
+
+```
+public/notification-sound.mp3
+```
+
+You can use any short MP3 file for this purpose. If no sound file is provided, the system will attempt to use browser notifications instead.
+
+### Adding a notification sound
+
+1. Obtain a short MP3 file (1-2 seconds) for notification sounds
+2. Rename it to `notification-sound.mp3`
+3. Place it in the `public` folder of the project
+4. The notification sound will play automatically when new orders arrive

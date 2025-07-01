@@ -132,3 +132,67 @@ export const placeOrder = async (orderData) => {
     throw error;
   }
 };
+
+/**
+ * Creates an admin notification for order status changes
+ * @param {string} orderId - The order ID
+ * @param {string} status - The new status
+ * @param {string} orderNumber - Optional order number for display
+ * @param {number} total - Optional order total
+ */
+export const createOrderStatusNotification = async (orderId, status, orderNumber, total) => {
+  try {
+    const notificationsRef = collection(db, 'adminNotifications');
+    
+    // Format the message based on status
+    let title, message, type;
+    
+    switch(status) {
+      case 'pending':
+        title = 'New Order Received';
+        message = `Order #${orderNumber || orderId.substring(0, 8)} is pending payment`;
+        type = 'info';
+        break;
+      case 'processing':
+        title = 'Order Processing';
+        message = `Order #${orderNumber || orderId.substring(0, 8)} is being processed`;
+        type = 'info';
+        break;
+      case 'completed':
+        title = 'Order Completed';
+        message = `Order #${orderNumber || orderId.substring(0, 8)} has been completed`;
+        type = 'success';
+        break;
+      case 'cancelled':
+        title = 'Order Cancelled';
+        message = `Order #${orderNumber || orderId.substring(0, 8)} has been cancelled`;
+        type = 'warning';
+        break;
+      case 'refunded':
+        title = 'Order Refunded';
+        message = `Order #${orderNumber || orderId.substring(0, 8)} has been refunded`;
+        type = 'warning';
+        break;
+      default:
+        title = 'Order Updated';
+        message = `Order #${orderNumber || orderId.substring(0, 8)} status changed to ${status}`;
+        type = 'info';
+    }
+    
+    // Add the notification
+    await addDoc(notificationsRef, {
+      title,
+      message,
+      type,
+      orderId,
+      orderNumber,
+      total,
+      status,
+      read: false,
+      createdAt: serverTimestamp()
+    });
+    
+  } catch (error) {
+    console.error('Error creating order notification:', error);
+  }
+};
