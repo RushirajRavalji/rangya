@@ -102,12 +102,24 @@ export const initAdmin = () => {
     if (!credentialConfig) {
       console.error('[firebase-admin] Missing Firebase Admin credentials. Please set env vars or provide serviceAccountKey.json');
       throw new Error('Firebase Admin credentials not found');
-    } else {
+    }
+    
+    try {
+      // Validate the credential config before using it
+      if (!credentialConfig.projectId || !credentialConfig.clientEmail || !credentialConfig.privateKey) {
+        throw new Error('Incomplete credential configuration');
+      }
+      
       admin.initializeApp({
         credential: admin.credential.cert(credentialConfig),
+        projectId: credentialConfig.projectId
       });
+      
       isInitialized = true;
-      console.log('[firebase-admin] Firebase Admin initialized successfully');
+      console.log('[firebase-admin] Firebase Admin initialized successfully with project:', credentialConfig.projectId);
+    } catch (credError) {
+      console.error('[firebase-admin] Failed to initialize with credentials:', credError.message);
+      throw credError;
     }
 
     return admin;
