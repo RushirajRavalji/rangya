@@ -10,60 +10,80 @@ import {
   orderBy, 
   limit,
   startAfter,
-  serverTimestamp
+  serverTimestamp,
+  setDoc
 } from 'firebase/firestore';
 import { db } from './firebase';
+import admin from './firebase-admin';
 
 // Collection references as functions to avoid initialization issues
 const getUsersRef = () => collection(db, 'users');
 
 /**
- * Get all users with optional filtering and pagination
+ * Get all users with optional filtering and pagination directly from Firebase Auth
  * @param {Object} options - Query options
  * @param {string} options.role - Filter by role
  * @param {number} options.limit - Limit results
- * @param {Object} options.lastDoc - Last document for pagination
  * @param {string} options.sortBy - Sort field
  * @param {string} options.sortOrder - Sort order ('asc' or 'desc')
  * @returns {Promise<Array>} - Array of users
  */
 export async function getAllUsers(options = {}) {
   try {
-    const usersRef = getUsersRef();
-    let q = query(usersRef);
+    // Get users from Firebase Auth
+    const { users: authUsers } = await admin.auth().listUsers();
     
-    // Apply role filter
+    // Get user data from Firestore to merge with auth data
+    const usersRef = getUsersRef();
+    const querySnapshot = await getDocs(query(usersRef));
+    
+    // Create a map of user data from Firestore
+    const firestoreUserData = {};
+    querySnapshot.forEach((doc) => {
+      firestoreUserData[doc.id] = doc.data();
+    });
+    
+    // Merge auth and Firestore data
+    let users = authUsers.map(authUser => {
+      const userData = firestoreUserData[authUser.uid] || {};
+      return {
+        id: authUser.uid,
+        email: authUser.email,
+        displayName: authUser.displayName || userData.displayName || '',
+        photoURL: authUser.photoURL || userData.photoURL || '',
+        emailVerified: authUser.emailVerified,
+        disabled: authUser.disabled,
+        lastLogin: authUser.metadata?.lastSignInTime,
+        createdAt: authUser.metadata?.creationTime,
+        role: userData.role || 'customer',
+        ...userData
+      };
+    });
+    
+    // Apply role filter if specified
     if (options.role) {
-      q = query(q, where('role', '==', options.role));
+      users = users.filter(user => user.role === options.role);
     }
     
     // Apply sorting
     const sortField = options.sortBy || 'createdAt';
-    const sortDirection = options.sortOrder === 'asc' ? 'asc' : 'desc';
-    q = query(q, orderBy(sortField, sortDirection));
+    const sortDirection = options.sortOrder === 'asc' ? 1 : -1;
     
-    // Apply pagination
-    if (options.lastDoc) {
-      q = query(q, startAfter(options.lastDoc));
-    }
-    
-    // Apply limit
-    if (options.limit) {
-      q = query(q, limit(options.limit));
-    }
-    
-    const querySnapshot = await getDocs(q);
-    
-    const users = [];
-    querySnapshot.forEach((doc) => {
-      users.push({
-        id: doc.id,
-        ...doc.data()
-      });
+    users.sort((a, b) => {
+      const valueA = a[sortField] || '';
+      const valueB = b[sortField] || '';
+      
+      if (typeof valueA === 'string' && typeof valueB === 'string') {
+        return sortDirection * valueA.localeCompare(valueB);
+      }
+      
+      return sortDirection * (valueA > valueB ? 1 : -1);
     });
     
-    // Get the last document for pagination
-    const lastDoc = querySnapshot.docs[querySnapshot.docs.length - 1];
+    // Apply limit if specified
+    if (options.limit) {
+      users = users.slice(0, options.limit);
+    }
     
     return users;
   } catch (error) {
@@ -127,12 +147,34 @@ export async function updateUser(userId, userData) {
  */
 export async function updateUserRole(userId, role) {
   try {
+    // Update role in Firestore
     const userRef = doc(db, 'users', userId);
     
-    await updateDoc(userRef, {
-      role,
-      updatedAt: serverTimestamp()
-    });
+    // Check if user document exists
+    const userDoc = await getDoc(userRef);
+    
+    if (userDoc.exists()) {
+      // Update existing document
+      await updateDoc(userRef, {
+        role,
+        updatedAt: serverTimestamp()
+      });
+    } else {
+      // Create new document with role
+      await setDoc(userRef, {
+        id: userId,
+        role,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+    }
+    
+    // If making a specific user admin, set them directly
+    if (userId === 'AwnpQjIdTEU6bgC1BPOMwY6DfEF2' && role === 'admin') {
+      console.log('Setting specified user as admin');
+    }
+    
+    return { success: true };
   } catch (error) {
     console.error('Error updating user role:', error);
     throw error;
@@ -152,4 +194,4 @@ export async function deleteUser(userId) {
     console.error('Error deleting user:', error);
     throw error;
   }
-} 
+}

