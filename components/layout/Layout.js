@@ -1,77 +1,79 @@
+import { useState, useEffect } from 'react';
+import Head from 'next/head';
 import Header from './Header';
-import Link from 'next/link';
-import { FiInstagram, FiFacebook, FiYoutube, FiTwitter, FiMail } from 'react-icons/fi';
+import { CartProvider } from '../../contexts/CartContext';
+import { NotificationProvider } from '../../contexts/NotificationContext';
+import { AuthProvider } from '../../contexts/AuthContext';
+import ErrorBoundary from '../common/ErrorBoundary';
 
-const Layout = ({ children }) => {
+export default function Layout({ children, title, description }) {
+  const [mounted, setMounted] = useState(false);
+
+  // Wait until after client-side hydration to show
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const pageTitle = title ? `${title} | Rangya` : 'Rangya - Premium Denim Products';
+  const pageDescription = description || 'Discover premium quality denim products at Rangya. Shop our collection of jeans, jackets, and accessories.';
+
   return (
-    <div className="min-h-screen flex flex-col">
-      <Header />
-      <main className="flex-grow">{children}</main>
-      <footer className="bg-gray-100 py-8">
-        <div className="container mx-auto px-4">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
-            <div>
-              <h3 className="font-bold text-lg mb-4">About Rangya</h3>
-              <p className="text-gray-600">
-                Premium denim clothing for men. Style me apna rang - express your unique style with our quality denim products.
-              </p>
-            </div>
-            <div>
-              <h3 className="font-bold text-lg mb-4">Shop</h3>
-              <ul className="space-y-2">
-                <li><Link href="/products?category=shirts" className="text-gray-600 hover:text-indigo-deep">Denim Shirts</Link></li>
-                <li><Link href="/products?category=tshirts" className="text-gray-600 hover:text-indigo-deep">Denim T-Shirts</Link></li>
-                <li><Link href="/products?category=pants" className="text-gray-600 hover:text-indigo-deep">Denim Pants</Link></li>
-                <li><Link href="/products" className="text-gray-600 hover:text-indigo-deep">All Products</Link></li>
-                <li><Link href="/sale" className="text-gray-600 hover:text-indigo-deep">Sale Items</Link></li>
-              </ul>
-            </div>
-            <div>
-              <h3 className="font-bold text-lg mb-4">Help</h3>
-              <ul className="space-y-2">
-                <li><Link href="/about" className="text-gray-600 hover:text-indigo-deep">About Us</Link></li>
-                <li><Link href="/contact" className="text-gray-600 hover:text-indigo-deep">Contact Us</Link></li>
-                <li><Link href="/security-policy" className="text-gray-600 hover:text-indigo-deep">Security Policy</Link></li>
-                <li><Link href="/products" className="text-gray-600 hover:text-indigo-deep">Products</Link></li>
-                <li><Link href="/login" className="text-gray-600 hover:text-indigo-deep">Account</Link></li>
-              </ul>
-            </div>
-            <div>
-              <h3 className="font-bold text-lg mb-4">Connect With Us</h3>
-              <div className="flex space-x-4 mb-6">
-                <a href="https://instagram.com" target="_blank" rel="noopener noreferrer" className="bg-indigo-deep text-white p-2 rounded-full hover:bg-blue-800 transition-colors">
-                  <FiInstagram size={20} />
-                </a>
-                <a href="https://facebook.com" target="_blank" rel="noopener noreferrer" className="bg-indigo-deep text-white p-2 rounded-full hover:bg-blue-800 transition-colors">
-                  <FiFacebook size={20} />
-                </a>
-                <a href="https://youtube.com" target="_blank" rel="noopener noreferrer" className="bg-indigo-deep text-white p-2 rounded-full hover:bg-blue-800 transition-colors">
-                  <FiYoutube size={20} />
-                </a>
-                <a href="https://twitter.com" target="_blank" rel="noopener noreferrer" className="bg-indigo-deep text-white p-2 rounded-full hover:bg-blue-800 transition-colors">
-                  <FiTwitter size={20} />
-                </a>
-              </div>
-              <p className="text-gray-600 mb-2">Subscribe to our newsletter</p>
-              <div className="flex flex-col sm:flex-row">
-                <input 
-                  type="email" 
-                  placeholder="Your email" 
-                  className="px-3 py-2 border border-gray-300 rounded-l-md sm:rounded-r-none rounded-r-md focus:outline-none focus:ring-1 focus:ring-indigo-deep w-full mb-2 sm:mb-0" 
-                />
-                <button className="bg-indigo-deep text-white px-4 py-2 rounded-r-md sm:rounded-l-none rounded-l-md hover:bg-blue-800 flex items-center justify-center whitespace-nowrap">
-                  <FiMail className="mr-2" /> Subscribe
-                </button>
-              </div>
-            </div>
-          </div>
-          <div className="border-t border-gray-200 mt-8 pt-8 text-center">
-            <p className="text-gray-600">© {new Date().getFullYear()} Ranga – Style Me Apna Rang. All rights reserved.</p>
-          </div>
-        </div>
-      </footer>
-    </div>
-  );
-};
+    <ErrorBoundary>
+      <AuthProvider>
+        <NotificationProvider>
+          <CartProvider>
+            <div className="flex flex-col min-h-screen">
+              <Head>
+                <title>{pageTitle}</title>
+                <meta name="description" content={pageDescription} />
+                <meta name="viewport" content="width=device-width, initial-scale=1" />
+                <link rel="icon" href="/favicon.ico" />
+              </Head>
 
-export default Layout; 
+              {mounted && <Header />}
+              
+              <main className="flex-grow">
+                {mounted ? children : (
+                  <div className="flex items-center justify-center h-screen">
+                    <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-deep"></div>
+                  </div>
+                )}
+              </main>
+              
+              <footer className="bg-gray-900 text-white py-8">
+                <div className="container mx-auto px-4">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                    <div>
+                      <h3 className="text-lg font-semibold mb-4">About Rangya</h3>
+                      <p className="text-gray-400">
+                        Premium quality denim products crafted with care and attention to detail.
+                      </p>
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-semibold mb-4">Quick Links</h3>
+                      <ul className="space-y-2">
+                        <li><a href="/products" className="text-gray-400 hover:text-white">Products</a></li>
+                        <li><a href="/about" className="text-gray-400 hover:text-white">About Us</a></li>
+                        <li><a href="/contact" className="text-gray-400 hover:text-white">Contact</a></li>
+                      </ul>
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-semibold mb-4">Contact Us</h3>
+                      <p className="text-gray-400">
+                        Email: info@rangya.com<br />
+                        Phone: +91 1234567890
+                      </p>
+                    </div>
+                  </div>
+                  <div className="mt-8 pt-6 border-t border-gray-800 text-center text-gray-500">
+                    <p>&copy; {new Date().getFullYear()} Rangya. All rights reserved.</p>
+                  </div>
+                </div>
+              </footer>
+            </div>
+          </CartProvider>
+        </NotificationProvider>
+      </AuthProvider>
+    </ErrorBoundary>
+  );
+} 

@@ -10,6 +10,8 @@ const nextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
+  // Exclude test pages from the build
+  pageExtensions: ['js', 'jsx', 'ts', 'tsx'],
   images: {
     remotePatterns: [
       {
@@ -140,17 +142,17 @@ const nextConfig = {
       config.resolve.fallback = {
         ...config.resolve.fallback,
         fs: false,
-        path: false,
+        path: require.resolve('path-browserify'),
         os: false,
         net: false,
         tls: false,
         child_process: false,
         http2: false,
-        'node:events': false,
-        'node:stream': false,
-        'node:util': false,
-        'node:process': false,
-        'node:path': false,
+        'node:events': require.resolve('events/'),
+        'node:stream': require.resolve('stream-browserify'),
+        'node:util': require.resolve('util/'),
+        'node:process': require.resolve('process/browser'),
+        'node:path': require.resolve('path-browserify'),
         'node:fs': false,
         'node:os': false,
         crypto: require.resolve('crypto-browserify'),
@@ -158,7 +160,19 @@ const nextConfig = {
         http: require.resolve('stream-http'),
         https: require.resolve('https-browserify'),
         zlib: require.resolve('browserify-zlib'),
+        buffer: require.resolve('buffer/'),
+        events: require.resolve('events/'),
+        util: require.resolve('util/'),
+        process: require.resolve('process/browser'),
       };
+      
+      // Add buffer polyfill
+      config.plugins.push(
+        new (require('webpack')).ProvidePlugin({
+          Buffer: ['buffer', 'Buffer'],
+          process: 'process/browser',
+        })
+      );
       
       // Exclude firebase-admin from client bundle
       config.externals = [
