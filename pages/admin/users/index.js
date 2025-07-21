@@ -2,80 +2,23 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { FiEdit, FiTrash2, FiLoader, FiSearch, FiChevronLeft, FiChevronRight } from 'react-icons/fi';
 import AdminLayout from '../../../components/layout/AdminLayout';
-import { useAuth } from '../../../contexts/AuthContext';
-import { useRouter } from 'next/router';
+import { updateUserRole, deleteUser } from '../../../utils/userService';
 
-export default function AdminUsers() {
-  const router = useRouter();
-  const { currentUser, userRole } = useAuth();
-  const [users, setUsers] = useState([]);
-  const [loading, setLoading] = useState(true);
+export default function AdminUsers({ initialUsers = [], error: initialError = null }) {
+  const [users, setUsers] = useState(initialUsers);
+  const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
+  const [totalPages, setTotalPages] = useState(Math.ceil(initialUsers.length / 10) || 1);
   const [selectedUser, setSelectedUser] = useState(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showRoleModal, setShowRoleModal] = useState(false);
   const [newRole, setNewRole] = useState('');
   const [processing, setProcessing] = useState(false);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState(initialError);
   const [success, setSuccess] = useState(null);
 
   const usersPerPage = 10;
-
-  // Check if user is admin
-  useEffect(() => {
-    if (typeof window !== 'undefined' && (!currentUser || userRole !== 'admin')) {
-      router.push('/login?redirect=/admin/products');
-    }
-  }, [currentUser, userRole, router]);
-
-  // Fetch users
-  useEffect(() => {
-    async function fetchUsers() {
-      try {
-        setLoading(true);
-        setError(null);
-        
-        // Use API route instead of direct function call
-        const response = await fetch('/api/admin/users');
-        
-        if (!response.ok) {
-          throw new Error('Failed to fetch users');
-        }
-        
-        const allUsers = await response.json();
-        
-        // Check if the specified user exists and set as admin if needed
-        const targetUserId = 'AwnpQjIdTEU6bgC1BPOMwY6DfEF2';
-        const targetUser = allUsers.find(user => user.id === targetUserId);
-        
-        if (targetUser && targetUser.role !== 'admin') {
-          await updateUserRole(targetUserId, 'admin');
-          // Refresh the user list after making the change
-          const updatedResponse = await fetch('/api/admin/users');
-          if (!updatedResponse.ok) {
-            throw new Error('Failed to fetch updated users');
-          }
-          const updatedUsers = await updatedResponse.json();
-          setUsers(updatedUsers);
-          setTotalPages(Math.ceil(updatedUsers.length / usersPerPage));
-        } else {
-          setUsers(allUsers);
-          setTotalPages(Math.ceil(allUsers.length / usersPerPage));
-        }
-      } catch (err) {
-        console.error('Error fetching users:', err);
-        setError('Failed to load users');
-      } finally {
-        setLoading(false);
-      }
-    }
-    
-    if (currentUser && userRole === 'admin') {
-      fetchUsers();
-    }
-  }, [currentUser, userRole]);
 
   // Handle search
   const handleSearch = (e) => {
@@ -98,28 +41,6 @@ export default function AdminUsers() {
     (currentPage - 1) * usersPerPage,
     currentPage * usersPerPage
   );
-
-  // Handle role change using API
-  const updateUserRole = async (userId, role) => {
-    try {
-      const response = await fetch('/api/admin/users', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ userId, role }),
-      });
-      
-      if (!response.ok) {
-        throw new Error('Failed to update user role');
-      }
-      
-      return await response.json();
-    } catch (error) {
-      console.error('Error updating user role:', error);
-      throw error;
-    }
-  };
 
   // Handle role change
   const handleRoleChange = async () => {
@@ -153,28 +74,6 @@ export default function AdminUsers() {
     }
   };
 
-  // Handle user deletion using API
-  const deleteUserById = async (userId) => {
-    try {
-      const response = await fetch('/api/admin/users', {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ userId }),
-      });
-      
-      if (!response.ok) {
-        throw new Error('Failed to delete user');
-      }
-      
-      return await response.json();
-    } catch (error) {
-      console.error('Error deleting user:', error);
-      throw error;
-    }
-  };
-
   // Handle user deletion
   const handleDeleteUser = async () => {
     if (!selectedUser) return;
@@ -183,7 +82,14 @@ export default function AdminUsers() {
       setProcessing(true);
       setError(null);
       
-      await deleteUserById(selectedUser.id);
+      // Call API endpoint for server-side deletion
+      const response = await fetch(`/api/admin/users/delete?userId=${selectedUser.id}`, {
+        method: 'DELETE',
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to delete user');
+      }
       
       // Update local state
       setUsers(prevUsers => prevUsers.filter(user => user.id !== selectedUser.id));
@@ -493,4 +399,51 @@ export default function AdminUsers() {
       )}
     </AdminLayout>
   );
+}
+
+// Get server-side props to fetch users
+export async function getServerSideProps() {
+  try {
+    // Import server-side only
+    const { getAllUsers } = require('../../../utils/userService');
+    
+    // Fetch users
+    const allUsers = await getAllUsers({
+      sortBy: 'createdAt',
+      sortOrder: 'desc'
+    });
+    
+    // Check if the specified user exists and set as admin if needed
+    const targetUserId = 'AwnpQjIdTEU6bgC1BPOMwY6DfEF2';
+    const targetUser = allUsers.find(user => user.id === targetUserId);
+    
+    if (targetUser && targetUser.role !== 'admin') {
+      const { updateUserRole } = require('../../../utils/userService');
+      await updateUserRole(targetUserId, 'admin');
+      // Refresh the user list after making the change
+      const updatedUsers = await getAllUsers({
+        sortBy: 'createdAt',
+        sortOrder: 'desc'
+      });
+      return {
+        props: {
+          initialUsers: JSON.parse(JSON.stringify(updatedUsers))
+        }
+      };
+    }
+    
+    return {
+      props: {
+        initialUsers: JSON.parse(JSON.stringify(allUsers))
+      }
+    };
+  } catch (error) {
+    console.error('Error fetching users:', error);
+    return {
+      props: {
+        initialUsers: [],
+        error: 'Failed to load users'
+      }
+    };
+  }
 }

@@ -10,8 +10,6 @@ const nextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
-  // Exclude test pages from the build
-  pageExtensions: ['js', 'jsx', 'ts', 'tsx'],
   images: {
     remotePatterns: [
       {
@@ -36,7 +34,6 @@ const nextConfig = {
       'firebase',
       'lodash',
     ],
-    esmExternals: 'loose', // Handle ESM imports more loosely
   },
   // Ensure environment variables are available
   env: {
@@ -137,59 +134,38 @@ const nextConfig = {
       'moment': 'moment/min/moment.min.js',
     };
     
-    // Add fallbacks for Node.js modules in client-side code
+    // Polyfill Node.js modules for client-side
     if (!isServer) {
       config.resolve.fallback = {
         ...config.resolve.fallback,
         fs: false,
-        path: require.resolve('path-browserify'),
+        path: false,
         os: false,
+        crypto: false,
+        stream: false,
+        http: false,
+        https: false,
+        zlib: false,
         net: false,
         tls: false,
         child_process: false,
-        http2: false,
-        'node:events': require.resolve('events/'),
-        'node:stream': require.resolve('stream-browserify'),
-        'node:util': require.resolve('util/'),
-        'node:process': require.resolve('process/browser'),
-        'node:path': require.resolve('path-browserify'),
-        'node:fs': false,
-        'node:os': false,
-        crypto: require.resolve('crypto-browserify'),
-        stream: require.resolve('stream-browserify'),
-        http: require.resolve('stream-http'),
-        https: require.resolve('https-browserify'),
-        zlib: require.resolve('browserify-zlib'),
-        buffer: require.resolve('buffer/'),
-        events: require.resolve('events/'),
-        util: require.resolve('util/'),
-        process: require.resolve('process/browser'),
       };
-      
-      // Add buffer polyfill
-      config.plugins.push(
-        new (require('webpack')).ProvidePlugin({
-          Buffer: ['buffer', 'Buffer'],
-          process: 'process/browser',
-        })
-      );
-      
-      // Exclude firebase-admin from client bundle
-      config.externals = [
-        ...(config.externals || []),
-        {
-          'firebase-admin': 'firebase-admin',
-          'firebase-admin/app': 'firebase-admin/app',
-          'firebase-admin/auth': 'firebase-admin/auth',
-          'firebase-admin/firestore': 'firebase-admin/firestore',
-          'firebase-admin/storage': 'firebase-admin/storage',
-        }
-      ];
     }
     
     // Return the modified config
     return config;
   },
+  // Exclude test pages from the build
+  pageExtensions: ['js', 'jsx', 'ts', 'tsx'],
+  excludePages: [
+    '/admin/test-firebase',
+    '/admin/test-layout',
+    '/admin/test/**',
+    '/admin/debug',
+    '/admin/debug-layout',
+    '/api/test-**',
+    '/auth-diagnostic'
+  ]
 };
 
 // Only log environment variables during development

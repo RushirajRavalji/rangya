@@ -16,6 +16,9 @@ import {
 import { db } from './firebase';
 import admin from './firebase-admin';
 
+// Check if code is running on server or client
+const isServer = typeof window === 'undefined';
+
 // Collection references as functions to avoid initialization issues
 const getUsersRef = () => collection(db, 'users');
 
@@ -29,6 +32,12 @@ const getUsersRef = () => collection(db, 'users');
  * @returns {Promise<Array>} - Array of users
  */
 export async function getAllUsers(options = {}) {
+  // This function should only be called server-side
+  if (!isServer) {
+    console.warn('getAllUsers should only be called server-side');
+    return [];
+  }
+
   try {
     // Get users from Firebase Auth
     const { users: authUsers } = await admin.auth().listUsers();
@@ -187,9 +196,20 @@ export async function updateUserRole(userId, role) {
  * @returns {Promise<void>}
  */
 export async function deleteUser(userId) {
+  // This function should only be called server-side
+  if (!isServer) {
+    console.warn('deleteUser should only be called server-side');
+    throw new Error('This operation can only be performed server-side');
+  }
+
   try {
     const userRef = doc(db, 'users', userId);
     await deleteDoc(userRef);
+    
+    // Delete user from Firebase Auth if we're on the server
+    if (isServer) {
+      await admin.auth().deleteUser(userId);
+    }
   } catch (error) {
     console.error('Error deleting user:', error);
     throw error;

@@ -4,13 +4,6 @@ import { FiDatabase, FiRefreshCw, FiPlus, FiCheck, FiAlertTriangle } from 'react
 import AdminLayout from '../../components/layout/AdminLayout';
 import { AdminNotificationProvider } from '../../contexts/AdminNotificationContext';
 
-// Add this export to prevent static generation
-export const getStaticProps = () => {
-  return {
-    notFound: true // This will return a 404 page
-  };
-};
-
 export default function TestFirebase() {
   const [loading, setLoading] = useState(false);
   const [testResults, setTestResults] = useState(null);
