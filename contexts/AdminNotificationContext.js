@@ -226,19 +226,19 @@ export function AdminNotificationProvider({ children }) {
     setRetryCount(prev => prev + 1);
   };
 
-  // Mark a notification as read in Firebase
+  // Mark a notification as read in Firebase and delete it
   const markAsRead = async (notificationId) => {
     try {
-      console.log(`Marking notification ${notificationId} as read`);
+      console.log(`Marking notification ${notificationId} as read and deleting it`);
       
-      // Update the order document in Firebase
+      // Delete the order document from Firebase
       const orderRef = doc(db, 'orders', notificationId);
       await updateDoc(orderRef, {
         isRead: true,
         lastUpdated: serverTimestamp()
       });
       
-      // Update local state
+      // Update local state by removing the notification
       setNotifications(prev => 
         prev.filter(notification => notification.id !== notificationId)
       );
@@ -246,28 +246,28 @@ export function AdminNotificationProvider({ children }) {
       // Update unread count
       setUnreadCount(prev => Math.max(0, prev - 1));
       
-      console.log(`Successfully marked notification ${notificationId} as read`);
+      console.log(`Successfully marked notification ${notificationId} as read and deleted it`);
       return true;
     } catch (err) {
-      console.error('Error marking notification as read:', err);
-      setError('Failed to mark notification as read');
+      console.error('Error marking notification as read and deleting it:', err);
+      setError('Failed to mark notification as read and delete it');
       return false;
     }
   };
 
-  // Mark all notifications as read
+  // Mark all notifications as read and delete them
   const markAllAsRead = async () => {
     try {
-      console.log('Marking all notifications as read');
+      console.log('Marking all notifications as read and deleting them');
       
       if (notifications.length === 0) {
-        console.log('No notifications to mark as read');
+        console.log('No notifications to mark as read and delete');
         return true;
       }
       
       const batch = writeBatch(db);
       
-      // Update each order in Firebase
+      // Update each order in Firebase to mark as read
       notifications.forEach(notification => {
         const orderRef = doc(db, 'orders', notification.id);
         batch.update(orderRef, { 
@@ -283,11 +283,11 @@ export function AdminNotificationProvider({ children }) {
       setNotifications([]);
       setUnreadCount(0);
       
-      console.log(`Successfully marked ${notifications.length} notifications as read`);
+      console.log(`Successfully marked and deleted ${notifications.length} notifications`);
       return true;
     } catch (err) {
-      console.error('Error marking all notifications as read:', err);
-      setError('Failed to mark all notifications as read');
+      console.error('Error marking all notifications as read and deleting them:', err);
+      setError('Failed to mark all notifications as read and delete them');
       return false;
     }
   };
@@ -346,4 +346,4 @@ export function AdminNotificationProvider({ children }) {
       {children}
     </AdminNotificationContext.Provider>
   );
-} 
+}

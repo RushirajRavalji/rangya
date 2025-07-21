@@ -40,7 +40,7 @@ export async function searchProducts(options = {}) {
     sizes = [],
     sortBy = 'createdAt',
     sortOrder = 'desc',
-    limit: resultLimit = 12,
+    limit: resultLimit = 24,
     lastDoc = null,
     firstDoc = null,
     bypassCache = false,
@@ -55,11 +55,13 @@ export async function searchProducts(options = {}) {
   if (!bypassCache && !lastDoc && !firstDoc) {
     const cachedResults = getCacheItem(cacheKey);
     if (cachedResults) {
+      console.log('Returning cached search results');
       return cachedResults;
     }
   }
   
   try {
+    console.log('Searching products with options:', options);
     const productsRef = collection(db, 'products');
     let constraints = [];
     
@@ -106,8 +108,10 @@ export async function searchProducts(options = {}) {
     }
     
     // Execute query
+    console.log('Executing Firestore query with constraints:', constraints.length);
     const q = query(productsRef, ...constraints);
     const querySnapshot = await getDocs(q);
+    console.log(`Query returned ${querySnapshot.docs.length} products`);
     
     // Process results
     let products = [];
@@ -156,6 +160,8 @@ export async function searchProducts(options = {}) {
       });
     }
     
+    console.log(`After client-side filtering: ${products.length} products`);
+    
     // Get first and last documents for pagination
     const firstVisible = querySnapshot.docs[0] || null;
     const lastVisible = querySnapshot.docs[querySnapshot.docs.length - 1] || null;
@@ -163,7 +169,7 @@ export async function searchProducts(options = {}) {
     const results = {
       products,
       pagination: {
-        hasMore: products.length === resultLimit,
+        hasMore: querySnapshot.docs.length === resultLimit,
         firstVisible,
         lastVisible
       }

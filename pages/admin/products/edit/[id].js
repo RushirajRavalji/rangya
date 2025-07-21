@@ -466,10 +466,10 @@ export default function EditProduct() {
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-deep"
                   >
                     <option value="">Select Category</option>
-                    <option value="shirts">Shirts</option>
-                    <option value="tshirts">T-Shirts</option>
-                    <option value="pants">Pants</option>
-                    <option value="accessories">Accessories</option>
+                    <option value="Shirts">Shirts</option>
+                    <option value="T-shirts">T-shirts</option>
+                    <option value="Jeans">Jeans</option>
+                    <option value="Accessories">Accessories</option>
                   </select>
                 </div>
                 
@@ -637,4 +637,4 @@ export default function EditProduct() {
       </div>
     </div>
   );
-} 
+}

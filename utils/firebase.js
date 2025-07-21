@@ -27,7 +27,8 @@ import {
   getDocs,
   serverTimestamp,
   connectFirestoreEmulator,
-  limit
+  limit,
+  addDoc
 } from 'firebase/firestore';
 import { getStorage, connectStorageEmulator } from 'firebase/storage';
 import { getFunctions, connectFunctionsEmulator } from 'firebase/functions';
@@ -257,6 +258,156 @@ export const testFirestoreConnection = async () => {
   }
 };
 
+/**
+ * Map for normalizing category names
+ * This should match the mapping in pages/api/getProducts.js
+ */
+const categoryMappings = {
+  'jeans': 'Jeans',
+  'pants': 'Jeans',
+  'jean': 'Jeans',
+  'pant': 'Jeans',
+  'shirts': 'Shirts',
+  'shirt': 'Shirts',
+  't-shirts': 'T-shirts',
+  'tshirts': 'T-shirts',
+  't-shirt': 'T-shirts',
+  'tshirt': 'T-shirts',
+  'accessories': 'Accessories',
+  'accessory': 'Accessories'
+};
+
+/**
+ * Helper function to normalize category names
+ * This should match the function in pages/api/getProducts.js
+ */
+const normalizeCategory = (category) => {
+  if (!category) return null;
+  
+  const lowercaseCategory = category.toLowerCase();
+  
+  // Check for direct mapping first
+  if (categoryMappings[lowercaseCategory]) {
+    return categoryMappings[lowercaseCategory];
+  }
+  
+  // If no direct mapping, check for partial matches
+  if (lowercaseCategory.includes('shirt') && !lowercaseCategory.includes('t-shirt') && !lowercaseCategory.includes('tshirt')) {
+    return 'Shirts';
+  } else if (lowercaseCategory.includes('t-shirt') || lowercaseCategory.includes('tshirt')) {
+    return 'T-shirts';
+  } else if (lowercaseCategory.includes('jean') || lowercaseCategory.includes('pant')) {
+    return 'Jeans';
+  } else if (lowercaseCategory.includes('accessor')) {
+    return 'Accessories';
+  }
+  
+  return category; // Return original if no match
+};
+
+/**
+ * Checks if the products collection is empty and adds sample products if needed
+ * @returns {Promise<Object>} Result of the operation
+ */
+export const checkAndAddSampleProducts = async () => {
+  try {
+    if (!db) {
+      return {
+        success: false,
+        error: "Firestore database not initialized"
+      };
+    }
+    
+    // Check if products collection is empty
+    const productsRef = collection(db, 'products');
+    const q = query(productsRef, limit(1));
+    const querySnapshot = await getDocs(q);
+    
+    if (!querySnapshot.empty) {
+      return {
+        success: true,
+        message: "Products collection already has data",
+        productsExist: true
+      };
+    }
+    
+    // Add sample products from scripts/init-test-data.js
+    // Import the test products data
+    const testProducts = [
+      {
+        name_en: 'Classic Denim Shirt',
+        slug: 'classic-denim-shirt',
+        description_en: 'Premium quality denim shirt with classic styling.',
+        price: 2499,
+        salePrice: 1999,
+        category: 'Shirts',
+        stock: {
+          'S': 10,
+          'M': 15,
+          'L': 12,
+          'XL': 8
+        },
+        images: [
+          'https://via.placeholder.com/800x800?text=Denim+Shirt'
+        ],
+        badges: ['New', 'Bestseller'],
+        details: [
+          '100% premium denim',
+          'Button-down collar',
+          'Regular fit',
+          'Machine washable'
+        ],
+        popularity: 10,
+        featured: true
+      },
+      // Add more sample products as needed
+    ];
+    
+    // Add products to Firestore
+    const addedProducts = [];
+    
+    for (const product of testProducts) {
+      try {
+        // Normalize the category before adding to Firestore
+        const normalizedProduct = {
+          ...product,
+          category: normalizeCategory(product.category)
+        };
+        
+        // Add timestamp to each product
+        const productWithTimestamp = {
+          ...normalizedProduct,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        };
+        
+        const docRef = await addDoc(productsRef, productWithTimestamp);
+        console.log(`Product added with ID: ${docRef.id}`);
+        
+        addedProducts.push({
+          id: docRef.id,
+          name: product.name_en,
+          category: normalizedProduct.category
+        });
+      } catch (error) {
+        console.error(`Error adding product ${product.name_en}:`, error);
+      }
+    }
+    
+    return {
+      success: true,
+      message: `Successfully added ${addedProducts.length} sample products`,
+      addedProducts
+    };
+  } catch (error) {
+    console.error('Error checking/adding sample products:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+};
+
 // Export initialized Firebase services
 export { 
   app, 
@@ -283,5 +434,6 @@ export {
   query, 
   where, 
   getDocs,
-  serverTimestamp
+  serverTimestamp,
+  normalizeCategory // Export the category normalization function
 };

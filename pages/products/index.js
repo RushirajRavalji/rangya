@@ -4,6 +4,7 @@ import Head from 'next/head';
 import Link from 'next/link';
 import { FiFilter, FiX, FiChevronDown, FiLoader, FiGrid, FiList, FiRefreshCw } from 'react-icons/fi';
 import { searchProducts } from '../../utils/searchService';
+import { getProducts } from '../../utils/productService';
 import ProductCard from '../../components/products/ProductCard';
 import AdvancedSearch from '../../components/products/AdvancedSearch';
 import SEO from '../../components/common/SEO';
@@ -32,6 +33,7 @@ export default function Products() {
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [view, setView] = useState('grid'); // 'grid' or 'list'
   const [retryCount, setRetryCount] = useState(0);
+  const [error, setError] = useState(null);
   
   // Sort options
   const sortOptions = [
@@ -47,6 +49,8 @@ export default function Products() {
     async function fetchProducts() {
       try {
         setLoading(true);
+        setError(null);
+        console.log('Fetching products with query parameters:', router.query);
         
         // Parse query parameters
         const searchQuery = q || '';
@@ -61,35 +65,83 @@ export default function Products() {
         // Parse sort parameters
         const [sortBy, sortOrder] = sort ? sort.split('-') : ['createdAt', 'desc'];
         
-        const searchOptions = {
-          query: searchQuery,
-          categories: categoryList,
-          minPrice: minPriceValue,
-          maxPrice: maxPriceValue,
-          sizes: sizesList,
-          sortBy,
-          sortOrder,
-          limit: 24,
-          onSale: onSaleValue,
-          inStock: inStockValue
-        };
+        // Try both methods to fetch products
+        let result = null;
         
-        console.log('Searching products with options:', searchOptions);
+        // First try using the searchProducts function from searchService
+        try {
+          console.log('Attempting to fetch products using searchService...');
+          const searchOptions = {
+            query: searchQuery,
+            categories: categoryList,
+            minPrice: minPriceValue,
+            maxPrice: maxPriceValue,
+            sizes: sizesList,
+            sortBy,
+            sortOrder,
+            limit: 24,
+            onSale: onSaleValue,
+            inStock: inStockValue,
+            bypassCache: retryCount > 0 // Bypass cache on retry
+          };
+          
+          console.log('Searching products with options:', searchOptions);
+          
+          result = await searchProducts(searchOptions);
+          console.log('Search result:', result);
+        } catch (searchError) {
+          console.error('Error using searchProducts:', searchError);
+        }
         
-        const result = await searchProducts(searchOptions);
+        // If search didn't return products, try using getProducts from productService
+        if (!result || !result.products || result.products.length === 0) {
+          try {
+            console.log('Attempting to fetch products using productService...');
+            const productOptions = {
+              category: categoryList.length > 0 ? categoryList[0] : undefined,
+              sortBy,
+              sortOrder,
+              limit: 24
+            };
+            
+            console.log('Getting products with options:', productOptions);
+            
+            const productsResult = await getProducts(productOptions);
+            if (productsResult && productsResult.products && productsResult.products.length > 0) {
+              console.log(`Successfully loaded ${productsResult.products.length} products from productService`);
+              result = {
+                products: productsResult.products,
+                pagination: {
+                  hasMore: productsResult.products.length === 24,
+                  firstVisible: null,
+                  lastVisible: productsResult.lastDoc
+                }
+              };
+            }
+          } catch (productError) {
+            console.error('Error using getProducts:', productError);
+            if (!result) {
+              throw productError; // Rethrow if we don't have results yet
+            }
+          }
+        }
         
         if (result && result.products) {
           setProducts(result.products);
           setFirstDoc(result.pagination.firstVisible);
           setLastDoc(result.pagination.lastVisible);
           setHasMore(result.pagination.hasMore);
+          console.log(`Loaded ${result.products.length} products, hasMore: ${result.pagination.hasMore}`);
         } else {
           setProducts([]);
           setHasMore(false);
+          console.log('No products found or invalid result');
+          setError('No products found. Please try different search criteria.');
         }
       } catch (err) {
         console.error('Error searching products:', err);
         setProducts([]);
+        setError('Failed to load products. Please try again.');
       } finally {
         setLoading(false);
       }

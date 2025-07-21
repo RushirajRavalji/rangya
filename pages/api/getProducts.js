@@ -8,46 +8,8 @@ const limiter = rateLimit({
   limit: 30, // 30 requests per interval per IP
 });
 
-// Map for normalizing category names
-const categoryMappings = {
-  'jeans': 'Jeans',
-  'pants': 'Jeans',
-  'jean': 'Jeans',
-  'pant': 'Jeans',
-  'shirts': 'Shirts',
-  'shirt': 'Shirts',
-  't-shirts': 'T-shirts',
-  'tshirts': 'T-shirts',
-  't-shirt': 'T-shirts',
-  'tshirt': 'T-shirts',
-  'accessories': 'Accessories',
-  'accessory': 'Accessories'
-};
-
-// Helper function to normalize category names
-const normalizeCategory = (category) => {
-  if (!category) return null;
-  
-  const lowercaseCategory = category.toLowerCase();
-  
-  // Check for direct mapping first
-  if (categoryMappings[lowercaseCategory]) {
-    return categoryMappings[lowercaseCategory];
-  }
-  
-  // If no direct mapping, check for partial matches
-  if (lowercaseCategory.includes('shirt') && !lowercaseCategory.includes('t-shirt') && !lowercaseCategory.includes('tshirt')) {
-    return 'Shirts';
-  } else if (lowercaseCategory.includes('t-shirt') || lowercaseCategory.includes('tshirt')) {
-    return 'T-shirts';
-  } else if (lowercaseCategory.includes('jean') || lowercaseCategory.includes('pant')) {
-    return 'Jeans';
-  } else if (lowercaseCategory.includes('accessor')) {
-    return 'Accessories';
-  }
-  
-  return category; // Return original if no match
-};
+// Import normalizeCategory from firebase.js
+import { normalizeCategory } from '../../utils/firebase';
 
 export default async function handler(req, res) {
   // Only allow GET requests

@@ -91,17 +91,9 @@ export default function Home({ initialProducts }) {
   const normalizeCategoryName = (category) => {
     if (!category) return '';
     
-    const lcCategory = category.toLowerCase();
-    if (lcCategory === 'shirts' || lcCategory.includes('shirt') && !lcCategory.includes('t-shirt') && !lcCategory.includes('tshirt')) {
-      return 'shirts';
-    } else if (lcCategory === 't-shirts' || lcCategory === 'tshirts' || lcCategory.includes('t-shirt') || lcCategory.includes('tshirt')) {
-      return 't-shirts';
-    } else if (lcCategory === 'jeans' || lcCategory.includes('jean') || lcCategory.includes('pant')) {
-      return 'jeans';
-    } else if (lcCategory.includes('accessor')) {
-      return 'accessories';
-    }
-    return lcCategory;
+    // Import normalizeCategory from firebase.js
+    const { normalizeCategory } = require('../utils/firebase');
+    return normalizeCategory(category) || '';
   };
 
   // Filter products by category
@@ -333,4 +325,4 @@ export async function getStaticProps() {
       revalidate: 60 // Try again sooner if there was an error
     };
   }
-} 
+}

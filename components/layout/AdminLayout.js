@@ -17,6 +17,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useNotification } from '../../contexts/NotificationContext';
 
 import AdminNotifications from '../admin/AdminNotifications';
+import ProductNotifications from '../admin/ProductNotifications';
 
 export default function AdminLayout({ children, title }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -190,8 +191,9 @@ export default function AdminLayout({ children, title }) {
             </button>
             <h1 className="ml-4 lg:ml-0 text-xl font-semibold text-gray-800">{title || 'Admin Dashboard'}</h1>
           </div>
-          <div className="flex items-center">
+          <div className="flex items-center space-x-2">
             <AdminNotifications />
+            <ProductNotifications />
           </div>
         </header>
 

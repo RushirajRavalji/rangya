@@ -84,7 +84,7 @@ const convertTimestamps = (data) => {
  */
 export async function getProducts(options = {}) {
   try {
-    console.log("Fetching products with options:", options);
+    console.log("Fetching products with options:", JSON.stringify(options));
     
     // Check if Firebase is initialized properly
     if (!db) {
@@ -111,24 +111,13 @@ export async function getProducts(options = {}) {
       
       // Apply category filter
       if (options.category) {
-        // Normalize category mapping for consistent querying
-        const categoryMappings = {
-          'jeans': 'Jeans',
-          'pants': 'Jeans',  // Map pants to Jeans category
-          'shirts': 'Shirts',
-          'shirt': 'Shirts', // Map shirt to Shirts category
-          't-shirts': 'T-shirts',
-          'tshirts': 'T-shirts', // Map tshirts to T-shirts category
-          't-shirt': 'T-shirts', // Map t-shirt to T-shirts category
-          'tshirt': 'T-shirts', // Map tshirt to T-shirts category
-          'accessories': 'Accessories'
-        };
+        // Import normalizeCategory from firebase.js
+        const { normalizeCategory } = require('./firebase');
         
-        // Normalize the category name (case-insensitive)
+        // Normalize the category name
         let formattedCategory;
         if (typeof options.category === 'string') {
-          const lowercaseCategory = options.category.toLowerCase();
-          formattedCategory = categoryMappings[lowercaseCategory] || options.category;
+          formattedCategory = normalizeCategory(options.category);
         } else {
           formattedCategory = options.category;
         }
@@ -165,6 +154,12 @@ export async function getProducts(options = {}) {
     try {
       querySnapshot = await getDocs(q);
       console.log(`Query returned ${querySnapshot.docs.length} products`);
+      
+      // Debug: Log the first few document IDs if available
+      if (querySnapshot.docs.length > 0) {
+        const sampleIds = querySnapshot.docs.slice(0, 3).map(doc => doc.id);
+        console.log(`Sample document IDs: ${sampleIds.join(', ')}`);
+      }
     } catch (error) {
       console.error("Error executing query:", error);
       return { products: [], lastDoc: null };
@@ -173,23 +168,16 @@ export async function getProducts(options = {}) {
     // Process the results
     const products = [];
     try {
+      // Import normalizeCategory from firebase.js if not already imported
+      const { normalizeCategory } = require('./firebase');
+      
       querySnapshot.forEach((doc) => {
         const data = doc.data();
         
         // Normalize category if present
         let normalizedCategory = data.category;
         if (data.category) {
-          // Ensure proper category naming
-          const lcCategory = data.category.toLowerCase();
-          if (lcCategory.includes('shirt') && !lcCategory.includes('t-shirt') && !lcCategory.includes('tshirt')) {
-            normalizedCategory = 'Shirts';
-          } else if (lcCategory.includes('t-shirt') || lcCategory.includes('tshirt')) {
-            normalizedCategory = 'T-shirts';
-          } else if (lcCategory.includes('jean') || lcCategory.includes('pant')) {
-            normalizedCategory = 'Jeans';
-          } else if (lcCategory.includes('accessor')) {
-            normalizedCategory = 'Accessories';
-          }
+          normalizedCategory = normalizeCategory(data.category);
         }
         
         // Ensure required fields exist
@@ -204,9 +192,31 @@ export async function getProducts(options = {}) {
           category: normalizedCategory || data.category || "Uncategorized" // Make sure normalized category gets used
         };
         
-        // Convert Firebase timestamps to ISO strings
-        const processedProduct = convertTimestamps(product);
-        products.push(processedProduct);
+        // Only add the product if it matches the category filter
+        // This is a double-check to ensure category filtering works correctly
+        if (options.category) {
+          // Import normalizeCategory from firebase.js if not already imported
+          const { normalizeCategory } = require('./firebase');
+          
+          let formattedCategory;
+          if (typeof options.category === 'string') {
+            formattedCategory = normalizeCategory(options.category);
+          } else {
+            formattedCategory = options.category;
+          }
+          
+          // Only add if the product's category matches the requested category
+          if (product.category === formattedCategory) {
+            // Convert Firebase timestamps to ISO strings
+            const processedProduct = convertTimestamps(product);
+            products.push(processedProduct);
+          }
+        } else {
+          // If no category filter, add all products
+          // Convert Firebase timestamps to ISO strings
+          const processedProduct = convertTimestamps(product);
+          products.push(processedProduct);
+        }
       });
       console.log(`Processed ${products.length} products`);
     } catch (error) {
@@ -341,10 +351,19 @@ export async function getProductBySlug(slug, bypassCache = false) {
 export async function getRelatedProducts(product, limit = 4) {
   try {
     const productsRef = getProductsRef();
+    
+    // Ensure we have a normalized category for the query
+    let normalizedCategory = product.category;
+    if (normalizedCategory) {
+      // Import normalizeCategory from firebase.js
+      const { normalizeCategory: normalizeCategoryFn } = require('./firebase');
+      normalizedCategory = normalizeCategoryFn(normalizedCategory);
+    }
+    
     // Query products in the same category
     let q = query(
       productsRef,
-      where('category', '==', product.category),
+      where('category', '==', normalizedCategory),
       where('id', '!=', product.id),
       limit(limit)
     );
@@ -507,9 +526,18 @@ export async function uploadProductImage(file, productId) {
 export async function createProduct(productData) {
   try {
     const productsRef = getProductsRef();
+    
+    // Normalize category if present
+    let normalizedData = { ...productData };
+    if (normalizedData.category) {
+      // Import normalizeCategory from firebase.js
+      const { normalizeCategory } = require('./firebase');
+      normalizedData.category = normalizeCategory(normalizedData.category);
+    }
+    
     // Add timestamp
     const dataWithTimestamp = {
-      ...productData,
+      ...normalizedData,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp()
     };
@@ -521,7 +549,8 @@ export async function createProduct(productData) {
       const event = new CustomEvent('productAdded', { 
         detail: { 
           productId: docRef.id,
-          productName: productData.name_en
+          productName: productData.name_en,
+          category: normalizedData.category
         } 
       });
       window.dispatchEvent(event);
@@ -544,16 +573,24 @@ export async function updateProduct(productId, productData) {
   try {
     const productRef = doc(db, 'products', productId);
     
+    // Normalize category if present
+    let normalizedData = { ...productData };
+    if (normalizedData.category) {
+      // Import normalizeCategory from firebase.js
+      const { normalizeCategory } = require('./firebase');
+      normalizedData.category = normalizeCategory(normalizedData.category);
+    }
+    
     // Update the product
     await updateDoc(productRef, {
-      ...productData,
+      ...normalizedData,
       updatedAt: serverTimestamp()
     });
     
     // Invalidate cache
     deleteCacheItem(`product:${productId}`);
-    if (productData.slug) {
-      deleteCacheItem(`product:slug:${productData.slug}`);
+    if (normalizedData.slug) {
+      deleteCacheItem(`product:slug:${normalizedData.slug}`);
     }
     
     // Return the updated product
@@ -841,4 +878,4 @@ export const cleanupExpiredReservations = async (productId) => {
     console.error('Error cleaning up expired reservations:', error);
     return 0;
   }
-}; 
+};
