@@ -134,6 +134,24 @@ const nextConfig = {
       'moment': 'moment/min/moment.min.js',
     };
     
+    // Add fallbacks for Node.js modules in client-side code
+    if (!isServer) {
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        fs: false,
+        path: false,
+        os: false,
+        net: false,
+        tls: false,
+        child_process: false,
+        crypto: require.resolve('crypto-browserify'),
+        stream: require.resolve('stream-browserify'),
+        http: require.resolve('stream-http'),
+        https: require.resolve('https-browserify'),
+        zlib: require.resolve('browserify-zlib'),
+      };
+    }
+    
     // Return the modified config
     return config;
   },

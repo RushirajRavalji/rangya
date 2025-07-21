@@ -1,16 +1,31 @@
-import admin from "firebase-admin";
-import { ensureFirebaseEnv } from './loadEnv';
-import path from 'path';
-import fs from 'fs';
+// This module should only be imported in server-side code (API routes, getServerSideProps)
+// Importing it in client-side code will cause build errors
 
-if (typeof window === 'undefined') {
+// Check if we're on the server side
+const isServer = typeof window === 'undefined';
+
+// Only import and initialize firebase-admin on the server
+let admin = null;
+let isInitialized = false;
+
+if (isServer) {
+  // We're on the server, safe to import
+  admin = require("firebase-admin");
+  const { ensureFirebaseEnv } = require('./loadEnv');
+  const path = require('path');
+  const fs = require('fs');
+  
   // Ensure environment variables are loaded server-side
   ensureFirebaseEnv();
 }
 
-let isInitialized = false;
-
 export const initAdmin = () => {
+  // Only run on server
+  if (!isServer) {
+    console.error('Firebase Admin SDK can only be used on the server side');
+    return null;
+  }
+  
   if (isInitialized || admin.apps.length > 0) {
     return admin;
   }
@@ -50,8 +65,8 @@ export const initAdmin = () => {
   return admin;
 };
 
-// Initialize immediately if not already done
-if (!admin.apps.length) {
+// Initialize immediately if on server
+if (isServer && admin && !admin.apps.length) {
   try {
     initAdmin();
   } catch (error) {
@@ -59,4 +74,13 @@ if (!admin.apps.length) {
   }
 }
 
-export default admin;
+// Export a dummy object for client-side that won't break builds
+// but will show a clear error if someone tries to use it
+const clientSideStub = new Proxy({}, {
+  get: function(target, prop) {
+    throw new Error(`Firebase Admin SDK (${prop}) cannot be used on the client side. Use it only in API routes or getServerSideProps.`);
+  }
+});
+
+// Export the appropriate object based on environment
+export default isServer ? admin : clientSideStub;

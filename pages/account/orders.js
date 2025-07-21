@@ -4,7 +4,6 @@ import Link from 'next/link';
 import Head from 'next/head';
 import { FiPackage, FiChevronRight, FiLoader, FiAlertCircle, FiClock, FiCheckCircle, FiRefreshCw } from 'react-icons/fi';
 import { useAuth } from '../../contexts/AuthContext';
-import { getUserOrders } from '../../utils/orderService';
 import OptimizedImage from '../../components/common/OptimizedImage';
 
 export default function Orders() {
@@ -27,8 +26,15 @@ export default function Orders() {
     try {
       setLoading(true);
       setError(false);
-      // Use returnDirectArray option to get array directly
-      const userOrders = await getUserOrders(currentUser.uid, { returnDirectArray: true });
+      
+      // Use API route instead of direct function call
+      const response = await fetch('/api/account/orders');
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch orders');
+      }
+      
+      const userOrders = await response.json();
       setOrders(userOrders || []);
       setLoading(false);
     } catch (err) {
