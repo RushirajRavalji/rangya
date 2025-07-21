@@ -34,6 +34,7 @@ const nextConfig = {
       'firebase',
       'lodash',
     ],
+    esmExternals: 'loose', // Handle ESM imports more loosely
   },
   // Ensure environment variables are available
   env: {
@@ -144,12 +145,32 @@ const nextConfig = {
         net: false,
         tls: false,
         child_process: false,
+        http2: false,
+        'node:events': false,
+        'node:stream': false,
+        'node:util': false,
+        'node:process': false,
+        'node:path': false,
+        'node:fs': false,
+        'node:os': false,
         crypto: require.resolve('crypto-browserify'),
         stream: require.resolve('stream-browserify'),
         http: require.resolve('stream-http'),
         https: require.resolve('https-browserify'),
         zlib: require.resolve('browserify-zlib'),
       };
+      
+      // Exclude firebase-admin from client bundle
+      config.externals = [
+        ...(config.externals || []),
+        {
+          'firebase-admin': 'firebase-admin',
+          'firebase-admin/app': 'firebase-admin/app',
+          'firebase-admin/auth': 'firebase-admin/auth',
+          'firebase-admin/firestore': 'firebase-admin/firestore',
+          'firebase-admin/storage': 'firebase-admin/storage',
+        }
+      ];
     }
     
     // Return the modified config

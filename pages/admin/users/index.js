@@ -2,9 +2,12 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { FiEdit, FiTrash2, FiLoader, FiSearch, FiChevronLeft, FiChevronRight } from 'react-icons/fi';
 import AdminLayout from '../../../components/layout/AdminLayout';
-import { getAllUsers, updateUserRole, deleteUser } from '../../../utils/userService';
+import { useAuth } from '../../../contexts/AuthContext';
+import { useRouter } from 'next/router';
 
 export default function AdminUsers() {
+  const router = useRouter();
+  const { currentUser, userRole } = useAuth();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -20,6 +23,13 @@ export default function AdminUsers() {
 
   const usersPerPage = 10;
 
+  // Check if user is admin
+  useEffect(() => {
+    if (typeof window !== 'undefined' && (!currentUser || userRole !== 'admin')) {
+      router.push('/login?redirect=/admin/products');
+    }
+  }, [currentUser, userRole, router]);
+
   // Fetch users
   useEffect(() => {
     async function fetchUsers() {
@@ -27,10 +37,14 @@ export default function AdminUsers() {
         setLoading(true);
         setError(null);
         
-        const allUsers = await getAllUsers({
-          sortBy: 'createdAt',
-          sortOrder: 'desc'
-        });
+        // Use API route instead of direct function call
+        const response = await fetch('/api/admin/users');
+        
+        if (!response.ok) {
+          throw new Error('Failed to fetch users');
+        }
+        
+        const allUsers = await response.json();
         
         // Check if the specified user exists and set as admin if needed
         const targetUserId = 'AwnpQjIdTEU6bgC1BPOMwY6DfEF2';
@@ -39,10 +53,11 @@ export default function AdminUsers() {
         if (targetUser && targetUser.role !== 'admin') {
           await updateUserRole(targetUserId, 'admin');
           // Refresh the user list after making the change
-          const updatedUsers = await getAllUsers({
-            sortBy: 'createdAt',
-            sortOrder: 'desc'
-          });
+          const updatedResponse = await fetch('/api/admin/users');
+          if (!updatedResponse.ok) {
+            throw new Error('Failed to fetch updated users');
+          }
+          const updatedUsers = await updatedResponse.json();
           setUsers(updatedUsers);
           setTotalPages(Math.ceil(updatedUsers.length / usersPerPage));
         } else {
@@ -57,8 +72,10 @@ export default function AdminUsers() {
       }
     }
     
-    fetchUsers();
-  }, []);
+    if (currentUser && userRole === 'admin') {
+      fetchUsers();
+    }
+  }, [currentUser, userRole]);
 
   // Handle search
   const handleSearch = (e) => {
@@ -81,6 +98,28 @@ export default function AdminUsers() {
     (currentPage - 1) * usersPerPage,
     currentPage * usersPerPage
   );
+
+  // Handle role change using API
+  const updateUserRole = async (userId, role) => {
+    try {
+      const response = await fetch('/api/admin/users', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ userId, role }),
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to update user role');
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.error('Error updating user role:', error);
+      throw error;
+    }
+  };
 
   // Handle role change
   const handleRoleChange = async () => {
@@ -114,6 +153,28 @@ export default function AdminUsers() {
     }
   };
 
+  // Handle user deletion using API
+  const deleteUserById = async (userId) => {
+    try {
+      const response = await fetch('/api/admin/users', {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ userId }),
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to delete user');
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.error('Error deleting user:', error);
+      throw error;
+    }
+  };
+
   // Handle user deletion
   const handleDeleteUser = async () => {
     if (!selectedUser) return;
@@ -122,7 +183,7 @@ export default function AdminUsers() {
       setProcessing(true);
       setError(null);
       
-      await deleteUser(selectedUser.id);
+      await deleteUserById(selectedUser.id);
       
       // Update local state
       setUsers(prevUsers => prevUsers.filter(user => user.id !== selectedUser.id));
