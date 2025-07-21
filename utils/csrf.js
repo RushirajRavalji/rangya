@@ -113,6 +113,9 @@ export const withCSRFProtection = (handler) => {
   };
 };
 
+// ADD THIS LINE - This is what was missing!
+export const csrfProtection = withCSRFProtection;
+
 /**
  * Apply CSRF protection to all API routes in a directory
  * @param {Object} handlers - Object with API route handlers
@@ -178,6 +181,7 @@ export default {
   getCSRFToken,
   validateCSRFToken,
   withCSRFProtection,
+  csrfProtection,  // ADD THIS TO DEFAULT EXPORT TOO
   protectApiRoutes,
   fetchCsrfToken
-}; 
+};
