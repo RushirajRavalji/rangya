@@ -19,7 +19,25 @@ import { db } from '../utils/firebase';
 const AdminNotificationContext = createContext();
 
 export function useAdminNotification() {
-  return useContext(AdminNotificationContext);
+  const context = useContext(AdminNotificationContext);
+  
+  // Return default values during SSR or when context is not available
+  if (!context) {
+    return {
+      notifications: [],
+      unreadCount: 0,
+      loading: false,
+      error: null,
+      markAsRead: async () => false,
+      markAllAsRead: async () => false,
+      retryFetch: () => {},
+      playNotificationSound: () => {},
+      soundEnabled: false,
+      toggleSound: () => {}
+    };
+  }
+  
+  return context;
 }
 
 export function AdminNotificationProvider({ children }) {
@@ -69,6 +87,11 @@ export function AdminNotificationProvider({ children }) {
 
   // Fetch unread orders from Firebase
   useEffect(() => {
+    // Skip during SSR
+    if (typeof window === 'undefined') {
+      return;
+    }
+
     const fetchNotifications = async () => {
       try {
         setLoading(true);

@@ -4,8 +4,14 @@ import { useRouter } from 'next/router';
 import { useAdminNotification } from '../../contexts/AdminNotificationContext';
 
 const AdminNotifications = () => {
-  const { unreadCount, loading, error, retryFetch } = useAdminNotification();
+  const notificationContext = useAdminNotification();
+  const { unreadCount = 0, loading = false, error = null, retryFetch } = notificationContext || {};
   const router = useRouter();
+
+  // Return null during SSR if context is not available
+  if (!notificationContext) {
+    return null;
+  }
 
   const handleNotificationClick = () => {
     router.push('/admin/notifications');

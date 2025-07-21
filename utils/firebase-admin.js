@@ -54,11 +54,38 @@ export const initAdmin = () => {
     let credentialConfig = null;
     
     if (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PRIVATE_KEY) {
-      credentialConfig = {
-        projectId: process.env.FIREBASE_PROJECT_ID,
-        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-        privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, "\n"),
-      };
+      try {
+        // Clean and format the private key properly
+        let privateKey = process.env.FIREBASE_PRIVATE_KEY;
+        
+        // Handle different private key formats
+        if (privateKey) {
+          // Replace escaped newlines with actual newlines
+          privateKey = privateKey.replace(/\\n/g, '\n');
+          
+          // Ensure the key starts and ends with proper PEM markers
+          if (!privateKey.includes('-----BEGIN PRIVATE KEY-----')) {
+            console.error('[firebase-admin] Private key missing BEGIN marker');
+            throw new Error('Invalid private key format: missing BEGIN marker');
+          }
+          
+          if (!privateKey.includes('-----END PRIVATE KEY-----')) {
+            console.error('[firebase-admin] Private key missing END marker');
+            throw new Error('Invalid private key format: missing END marker');
+          }
+        }
+        
+        credentialConfig = {
+          projectId: process.env.FIREBASE_PROJECT_ID,
+          clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+          privateKey: privateKey,
+        };
+        
+        console.log('[firebase-admin] Using environment variables for credentials');
+      } catch (keyError) {
+        console.error('[firebase-admin] Error processing private key from environment:', keyError);
+        credentialConfig = null;
+      }
     } else {
       // Fallback to serviceAccountKey.json if present
       try {
