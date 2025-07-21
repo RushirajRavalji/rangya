@@ -1328,19 +1328,92 @@ export const createTestOrder = async () => {
       ...testOrder,
       id: orderRef.id
     };
-  } catch (error) {
-    console.error('Error creating test order:', error);
+  } catch (error) {    console.error('Error creating test order:', error);
     throw error;
   }
 };
 
+/**
+ * Cancel an order
+ * @param {string} orderId - Order ID to cancel
+ * @param {string} reason - Reason for cancellation
+ * @returns {Promise<Object>} - Updated order
+ */
+export const cancelOrder = async (orderId, reason = 'Customer requested cancellation') => {
+  try {
+    const order = await getOrderById(orderId);
+    if (!order) {
+      throw new Error('Order not found');
+    }
+
+    if (!isValidStatusTransition(order.status, ORDER_STATUSES.CANCELLED)) {
+      throw new Error(`Cannot cancel order with status: ${order.status}`);
+    }
+
+    // Update order status to cancelled
+    const updatedOrder = await updateOrderStatus(orderId, ORDER_STATUSES.CANCELLED, {
+      cancellationReason: reason,
+      cancelledAt: serverTimestamp()
+    });
+
+    // Restore stock for cancelled items
+    if (order.items && order.items.length > 0) {
+      await restoreStock(order.items);
+    }
+
+    return updatedOrder;
+  } catch (error) {
+    console.error('Error cancelling order:', error);
+    throw error;
+  }
+};
+
+/**
+ * Mark an order as paid
+ * @param {string} orderId - Order ID to mark as paid
+ * @param {Object} paymentData - Payment information
+ * @returns {Promise<Object>} - Updated order
+ */
+export const markOrderAsPaid = async (orderId, paymentData = {}) => {
+  try {
+    const order = await getOrderById(orderId);
+    if (!order) {
+      throw new Error('Order not found');
+    }
+
+    // Update order with payment information
+    const updatedOrder = await updateOrderStatus(orderId, ORDER_STATUSES.PROCESSING, {
+      paymentStatus: 'paid',
+      paidAt: serverTimestamp(),
+      paymentMethod: paymentData.method || 'unknown',
+      transactionId: paymentData.transactionId || null,
+      paymentData: paymentData
+    });
+
+    return updatedOrder;
+  } catch (error) {
+    console.error('Error marking order as paid:', error);
+    throw error;
+  }
+};
+
+// Export constants and functions
+export {
+  ORDER_STATUSES,
+  isValidStatusTransition
+};
+
 export default {
   ORDER_STATUSES,
+  isValidStatusTransition,
   getOrderById,
   getUserOrders,
   getAllOrders,
   createOrder,
   updateOrderStatus,
   validateOrderItems,
-  cleanupExpiredReservations
+  cleanupExpiredReservations,
+  cancelOrder,
+  markOrderAsPaid,
+  createTestOrder
 };

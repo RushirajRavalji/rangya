@@ -88,6 +88,35 @@ export const sendOrderStatusUpdate = async (order, user, newStatus, message = ''
 };
 
 /**
+ * Send order status update email (alias for compatibility)
+ * @param {Object} order - Order data
+ * @param {Object} user - User data
+ * @param {string} newStatus - New order status
+ * @param {string} message - Optional message
+ * @returns {Promise<Object>} - Send result
+ */
+export const sendOrderStatusUpdateEmail = async (order, user, newStatus, message = '') => {
+  return sendOrderStatusUpdate(order, user, newStatus, message);
+};
+
+/**
+ * Send order shipped email (mock version)
+ * @param {Object} order - Order data
+ * @param {Object} user - User data
+ * @param {Object} trackingInfo - Tracking information
+ * @returns {Promise<Object>} - Send result
+ */
+export const sendOrderShippedEmail = async (order, user, trackingInfo = {}) => {
+  console.log(`Mock order shipped email for order: ${order.orderNumber}`);
+  console.log('To user:', user.email);
+  if (trackingInfo.trackingNumber) {
+    console.log('Tracking number:', trackingInfo.trackingNumber);
+  }
+  
+  return { success: true, messageId: `mock-order-shipped-${Date.now()}` };
+};
+
+/**
  * Send welcome email (mock version)
  * @param {Object} user - User data
  * @returns {Promise<Object>} - Send result
