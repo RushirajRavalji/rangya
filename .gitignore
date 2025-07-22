@@ -41,7 +41,6 @@ yarn-error.log*
 
 # Firebase service account key (sensitive)
 serviceAccountKey.json
-serviceAccountKey.json.template
 
 # Additional security files
 *.key
