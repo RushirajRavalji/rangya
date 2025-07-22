@@ -7,7 +7,6 @@ import { AuthProvider } from '../contexts/AuthContext';
 import { CartProvider } from '../contexts/CartContext';
 import { NotificationProvider } from '../contexts/NotificationContext';
 import { AdminNotificationProvider } from '../contexts/AdminNotificationContext';
-import { ProductNotificationProvider } from '../contexts/ProductNotificationContext';
 import Head from 'next/head';
 import Script from 'next/script';
 import { onAuthStateChanged } from 'firebase/auth';
@@ -44,9 +43,7 @@ function MyApp({ Component, pageProps: { session, ...pageProps } }) {
       // Admin pages now handle their own layout
       return (
         <AdminNotificationProvider>
-          <ProductNotificationProvider>
-            <Component {...pageProps} />
-          </ProductNotificationProvider>
+          <Component {...pageProps} />
         </AdminNotificationProvider>
       );
     } else if (pathname.startsWith('/account')) {

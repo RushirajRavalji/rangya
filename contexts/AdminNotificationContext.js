@@ -19,25 +19,7 @@ import { db } from '../utils/firebase';
 const AdminNotificationContext = createContext();
 
 export function useAdminNotification() {
-  const context = useContext(AdminNotificationContext);
-  
-  // Return default values during SSR or when context is not available
-  if (!context) {
-    return {
-      notifications: [],
-      unreadCount: 0,
-      loading: false,
-      error: null,
-      markAsRead: async () => false,
-      markAllAsRead: async () => false,
-      retryFetch: () => {},
-      playNotificationSound: () => {},
-      soundEnabled: false,
-      toggleSound: () => {}
-    };
-  }
-  
-  return context;
+  return useContext(AdminNotificationContext);
 }
 
 export function AdminNotificationProvider({ children }) {
@@ -87,11 +69,6 @@ export function AdminNotificationProvider({ children }) {
 
   // Fetch unread orders from Firebase
   useEffect(() => {
-    // Skip during SSR
-    if (typeof window === 'undefined') {
-      return;
-    }
-
     const fetchNotifications = async () => {
       try {
         setLoading(true);
@@ -249,19 +226,19 @@ export function AdminNotificationProvider({ children }) {
     setRetryCount(prev => prev + 1);
   };
 
-  // Mark a notification as read in Firebase and delete it
+  // Mark a notification as read in Firebase
   const markAsRead = async (notificationId) => {
     try {
-      console.log(`Marking notification ${notificationId} as read and deleting it`);
+      console.log(`Marking notification ${notificationId} as read`);
       
-      // Delete the order document from Firebase
+      // Update the order document in Firebase
       const orderRef = doc(db, 'orders', notificationId);
       await updateDoc(orderRef, {
         isRead: true,
         lastUpdated: serverTimestamp()
       });
       
-      // Update local state by removing the notification
+      // Update local state
       setNotifications(prev => 
         prev.filter(notification => notification.id !== notificationId)
       );
@@ -269,28 +246,28 @@ export function AdminNotificationProvider({ children }) {
       // Update unread count
       setUnreadCount(prev => Math.max(0, prev - 1));
       
-      console.log(`Successfully marked notification ${notificationId} as read and deleted it`);
+      console.log(`Successfully marked notification ${notificationId} as read`);
       return true;
     } catch (err) {
-      console.error('Error marking notification as read and deleting it:', err);
-      setError('Failed to mark notification as read and delete it');
+      console.error('Error marking notification as read:', err);
+      setError('Failed to mark notification as read');
       return false;
     }
   };
 
-  // Mark all notifications as read and delete them
+  // Mark all notifications as read
   const markAllAsRead = async () => {
     try {
-      console.log('Marking all notifications as read and deleting them');
+      console.log('Marking all notifications as read');
       
       if (notifications.length === 0) {
-        console.log('No notifications to mark as read and delete');
+        console.log('No notifications to mark as read');
         return true;
       }
       
       const batch = writeBatch(db);
       
-      // Update each order in Firebase to mark as read
+      // Update each order in Firebase
       notifications.forEach(notification => {
         const orderRef = doc(db, 'orders', notification.id);
         batch.update(orderRef, { 
@@ -306,11 +283,11 @@ export function AdminNotificationProvider({ children }) {
       setNotifications([]);
       setUnreadCount(0);
       
-      console.log(`Successfully marked and deleted ${notifications.length} notifications`);
+      console.log(`Successfully marked ${notifications.length} notifications as read`);
       return true;
     } catch (err) {
-      console.error('Error marking all notifications as read and deleting them:', err);
-      setError('Failed to mark all notifications as read and delete them');
+      console.error('Error marking all notifications as read:', err);
+      setError('Failed to mark all notifications as read');
       return false;
     }
   };
@@ -369,4 +346,4 @@ export function AdminNotificationProvider({ children }) {
       {children}
     </AdminNotificationContext.Provider>
   );
-}
+} 

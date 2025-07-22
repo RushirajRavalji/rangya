@@ -91,8 +91,9 @@ export default function Home({ initialProducts }) {
   const normalizeCategoryName = (category) => {
     if (!category) return '';
     
-    // Simple normalization without requiring firebase.js during runtime
-    return category.toLowerCase().trim().replace(/[^a-z0-9]/g, '');
+    // Import normalizeCategory from firebase.js
+    const { normalizeCategory } = require('../utils/firebase');
+    return normalizeCategory(category) || '';
   };
 
   // Filter products by category
