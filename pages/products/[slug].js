@@ -31,7 +31,10 @@ export default function ProductDetail() {
   const [inWishlist, setInWishlist] = useState(false);
   const [togglingWishlist, setTogglingWishlist] = useState(false);
   const [addedToCart, setAddedToCart] = useState(false);
-
+  
+  // Define the size chart image path
+  const sizeChartImage = '/images/size-chart.png';
+  
   // Fetch product data
   useEffect(() => {
     async function fetchProduct() {
@@ -268,7 +271,15 @@ export default function ProductDetail() {
           {/* Product Images */}
           <div className="space-y-4">
             <div className="bg-gray-100 rounded-lg overflow-hidden aspect-square">
-              {product.images && product.images.length > 0 ? (
+              {selectedImage === 'size-chart' ? (
+                <OptimizedImage
+                  src={sizeChartImage}
+                  alt="Size Chart"
+                  width={600}
+                  height={600}
+                  className="w-full h-full object-contain"
+                />
+              ) : product.images && product.images.length > 0 ? (
                 <OptimizedImage
                   src={product.images[selectedImage]}
                   alt={product.name_en}
@@ -283,28 +294,43 @@ export default function ProductDetail() {
               )}
             </div>
             
-            {/* Thumbnail Gallery */}
-            {product.images && product.images.length > 1 && (
-              <div className="grid grid-cols-5 gap-2">
-                {product.images.map((image, index) => (
-                  <button
-                    key={index}
-                    onClick={() => setSelectedImage(index)}
-                    className={`bg-gray-100 rounded-md overflow-hidden aspect-square ${
-                      selectedImage === index ? 'ring-2 ring-indigo-deep' : ''
-                    }`}
-                  >
-                    <OptimizedImage
-                      src={image}
-                      alt={`${product.name_en} - Image ${index + 1}`}
-                      width={100}
-                      height={100}
-                      className="w-full h-full object-contain"
-                    />
-                  </button>
-                ))}
-              </div>
-            )}
+            {/* Thumbnail Gallery with Size Chart */}
+            <div className="grid grid-cols-6 gap-2">
+              {/* Size Chart Thumbnail */}
+              <button
+                onClick={() => setSelectedImage('size-chart')}
+                className={`bg-gray-100 rounded-md overflow-hidden aspect-square ${
+                  selectedImage === 'size-chart' ? 'ring-2 ring-indigo-deep' : ''
+                }`}
+              >
+                <OptimizedImage
+                  src={sizeChartImage}
+                  alt="Size Chart"
+                  width={100}
+                  height={100}
+                  className="w-full h-full object-contain"
+                />
+              </button>
+              
+              {/* Product Images */}
+              {product.images && product.images.map((image, index) => (
+                <button
+                  key={index}
+                  onClick={() => setSelectedImage(index)}
+                  className={`bg-gray-100 rounded-md overflow-hidden aspect-square ${
+                    selectedImage === index ? 'ring-2 ring-indigo-deep' : ''
+                  }`}
+                >
+                  <OptimizedImage
+                    src={image}
+                    alt={`${product.name_en} - Image ${index + 1}`}
+                    width={100}
+                    height={100}
+                    className="w-full h-full object-contain"
+                  />
+                </button>
+              ))}
+            </div>
           </div>
           
           {/* Product Info */}
@@ -341,6 +367,20 @@ export default function ProductDetail() {
             <div className="mb-8">
               <h2 className="text-lg font-semibold mb-2">Description</h2>
               <p className="text-gray-700">{product.description_en}</p>
+            </div>
+            
+            {/* Size Chart */}
+            <div className="mb-8">
+              <h2 className="text-lg font-semibold mb-2">Size Chart</h2>
+              <div className="border rounded-md p-2 inline-block">
+                <OptimizedImage
+                  src={sizeChartImage}
+                  alt="Size Chart"
+                  width={400}
+                  height={300}
+                  className="object-contain"
+                />
+              </div>
             </div>
             
             {/* Size Selection */}
@@ -571,4 +611,4 @@ const generateBreadcrumbStructuredData = (items) => {
       "item": item.url
     }))
   };
-}; 
+};

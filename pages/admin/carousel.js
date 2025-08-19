@@ -27,7 +27,7 @@ const CarouselManagementPage = () => {
         if (userDoc.exists()) {
           const userData = userDoc.data();
           // Check if role is admin or if it's our specific admin email
-          setIsAdmin(userData.role === 'admin' || userData.email === 'driger.ray.dranzer@gmail.com');
+          setIsAdmin(userData.role === 'admin' || userData.email === 'ns421602@gmail.com');
         } else {
           setIsAdmin(false);
         }
@@ -87,4 +87,4 @@ const CarouselManagementPage = () => {
   );
 };
 
-export default CarouselManagementPage; 
+export default CarouselManagementPage;

@@ -420,7 +420,7 @@ export function AuthProvider({ children }) {
       if (userDoc.exists()) {
         const userData = userDoc.data();
         // Check if this is our designated admin email
-        if (userData.email === 'driger.ray.dranzer@gmail.com') {
+        if (userData.email === 'ns421602@gmail.com') {
           // Set as admin regardless of what's in the database
           setUserRole('admin');
           
@@ -469,7 +469,7 @@ export function AuthProvider({ children }) {
           
           if (user) {
             // Check if this is our designated admin email
-            if (user.email === 'driger.ray.dranzer@gmail.com') {
+            if (user.email === 'ns421602@gmail.com') {
               setUserRole('admin');
               
               // Update the role in the database
