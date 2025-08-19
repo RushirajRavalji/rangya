@@ -52,20 +52,68 @@ export function AdminNotificationProvider({ children }) {
     }
   }, []);
 
+  // Added a function to play notification sound
+  const playSound = () => {
+    if (audioRef.current && soundEnabled) {
+      audioRef.current.play().catch(err => {
+        console.warn('Could not play notification sound:', err);
+      });
+    }
+  };
+  
+  // Added a function to show notification popup
+  const showNotificationPopup = (newNotification) => {
+    // Create a popup element
+    const popup = document.createElement('div');
+    popup.className = 'fixed top-20 right-5 bg-white shadow-lg rounded-lg p-4 z-50 animate-slide-in';
+    popup.innerHTML = `
+      <div class="flex items-center">
+        <div class="bg-indigo-100 p-2 rounded-full mr-3">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+          </svg>
+        </div>
+        <div>
+          <h3 class="font-semibold text-gray-800">New Order Received</h3>
+          <p class="text-sm text-gray-600">Order #${newNotification.orderNumber} - ${newNotification.customerName}</p>
+        </div>
+      </div>
+      <button class="absolute top-2 right-2 text-gray-400 hover:text-gray-600" onclick="this.parentElement.remove()">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+    `;
+    
+    // Add to document body
+    document.body.appendChild(popup);
+    
+    // Remove after 5 seconds
+    setTimeout(() => {
+      popup.classList.add('animate-slide-out');
+      setTimeout(() => popup.remove(), 300);
+    }, 5000);
+  };
+  
   // Play notification sound when new notifications arrive
   useEffect(() => {
-    // Only play sound if:
+    // Only play sound and show popup if:
     // 1. Sound is enabled
     // 2. Not the first load (lastNotificationCount is set)
     // 3. The count has increased
     // 4. Audio is available
     if (soundEnabled && lastNotificationCount > 0 && unreadCount > lastNotificationCount && audioRef.current) {
       playNotificationSound();
+      
+      // Show popup for the newest notification
+      if (notifications.length > 0) {
+        showNotificationPopup(notifications[0]);
+      }
     }
     
     // Update the last count
     setLastNotificationCount(unreadCount);
-  }, [unreadCount, lastNotificationCount, soundEnabled]);
+  }, [unreadCount, lastNotificationCount, soundEnabled, notifications]);
 
   // Fetch unread orders from Firebase
   useEffect(() => {
@@ -346,4 +394,4 @@ export function AdminNotificationProvider({ children }) {
       {children}
     </AdminNotificationContext.Provider>
   );
-} 
+}

@@ -29,7 +29,16 @@ export default function Orders() {
       setError(false);
       // Use returnDirectArray option to get array directly
       const userOrders = await getUserOrders(currentUser.uid, { returnDirectArray: true });
-      setOrders(userOrders || []);
+      
+      // Added check to ensure userOrders is an array
+      if (Array.isArray(userOrders)) {
+        setOrders(userOrders);
+      } else {
+        // If not an array, set to empty array to prevent rendering issues
+        setOrders([]);
+        console.warn('getUserOrders did not return an array');
+      }
+      
       setLoading(false);
     } catch (err) {
       console.error('Error fetching orders:', err);

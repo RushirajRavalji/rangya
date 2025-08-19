@@ -211,7 +211,7 @@ const CheckoutForm = ({ onOrderPlaced, onError }) => {
       }
     } catch (error) {
       console.error("Error fetching postal code data:", error);
-      showNotification("Failed to fetch location data. Please enter manually.", "error");
+      // Removed the error notification that was showing "Failed to fetch location data"
     } finally {
       setLoading(false);
     }

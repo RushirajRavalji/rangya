@@ -124,6 +124,7 @@ export default function VerifyEmail() {
               <div className="ml-3">
                 <p className="text-sm text-blue-700">
                   Please check your inbox and click the verification link to verify your email address.
+                  <strong> If you don't see the email, please check your spam or junk folder.</strong>
                 </p>
               </div>
             </div>
@@ -183,4 +184,4 @@ export default function VerifyEmail() {
       </div>
     </>
   );
-} 
+}
