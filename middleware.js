@@ -66,7 +66,8 @@ export async function middleware(request) {
       pathname.startsWith(path)
     );
     
-    if (requiresVerification && !decodedToken.emailVerified) {
+    // Only require email verification for admin users
+    if (requiresVerification && decodedToken.role === 'admin' && !decodedToken.emailVerified) {
       const url = new URL('/verify-email', request.url);
       return NextResponse.redirect(url);
     }
@@ -127,4 +128,4 @@ export const config = {
      */
     '/((?!_next/static|_next/image|favicon.ico|images/|public/).*)',
   ],
-}; 
+};

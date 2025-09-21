@@ -4,7 +4,7 @@ import {
   signInWithPopup, 
   signOut, 
   onAuthStateChanged,
-  browserPopupRedirectResolver,
+  browserPopupRedirectResolver,  // This import might be incorrect
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   sendPasswordResetEmail,
@@ -281,7 +281,11 @@ export function AuthProvider({ children }) {
       }
       
       // Sign in with popup and explicitly specify resolver
-      const result = await signInWithPopup(auth, provider, browserPopupRedirectResolver);
+      // In the signInWithGoogle function, change this line:
+const userCredential = await signInWithPopup(auth, provider);
+      
+      // To this:
+      const result = await signInWithPopup(auth, provider);
       const user = result.user;
       
       console.log("Google sign-in successful, user:", user.uid);
